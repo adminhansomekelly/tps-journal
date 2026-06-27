@@ -417,7 +417,7 @@ html,body{background:var(--bg);color:var(--text);font-family:var(--font);min-hei
     </button>
     <div style="display:flex;gap:6px;margin-top:6px;">
       <button onclick="document.getElementById('tps-restore-input').click()" style="flex:1;background:var(--surface2);color:var(--text);border:1px solid var(--border2);border-radius:8px;padding:8px 6px;font-size:11px;font-weight:600;cursor:pointer;font-family:var(--font);">Restore</button>
-      <button onclick="downloadMyCopy()" style="flex:1;background:var(--surface2);color:var(--text);border:1px solid var(--border2);border-radius:8px;padding:8px 6px;font-size:11px;font-weight:600;cursor:pointer;font-family:var(--font);" title="Download a full working copy of the app with your data inside">App copy</button>
+      <button onclick="downloadMyCopy()" style="flex:1;background:var(--surface2);color:var(--text);border:1px solid var(--border2);border-radius:8px;padding:8px 6px;font-size:11px;font-weight:600;cursor:pointer;font-family:var(--font);" title="Saves a one-time HTML snapshot of the app with your data frozen inside. This is for archiving only — it does not update as you trade. To keep using the live app, install or bookmark it instead.">Offline snapshot</button>
     </div>
     <input type="file" id="tps-restore-input" accept="application/json,.json" style="display:none;" onchange="importBackup(event)">
     <div style="font-size:9px;color:var(--muted);text-align:center;margin-top:7px;font-family:var(--mono);line-height:1.5;">Saves every trade, debrief,<br>backtest &amp; plan to a file</div>
@@ -433,6 +433,19 @@ html,body{background:var(--bg);color:var(--text);font-family:var(--font);min-hei
 <div class="panel active" id="panel-dashboard">
   <div class="page-title">Dashboard</div>
   <div class="page-sub" id="dash-date"></div>
+
+  <!-- Getting started / directions -->
+  <div class="card" id="getting-started-card" style="margin-bottom:14px;border:1px solid var(--accent);background:linear-gradient(180deg,var(--accent-dim),var(--surface));">
+    <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;">
+      <div style="font-size:13px;font-weight:700;color:var(--accent);">Getting started · read this first</div>
+      <button onclick="dismissGettingStarted()" title="Hide this" style="background:none;border:none;color:var(--muted);font-size:16px;line-height:1;cursor:pointer;padding:0 2px;">×</button>
+    </div>
+    <div style="margin-top:10px;font-size:12px;color:var(--text);line-height:1.7;">
+      <div style="margin-bottom:8px;"><span style="color:var(--accent);font-weight:700;">1.</span> This page is your app. To keep it, install it or bookmark it. On your phone tap the browser share button and choose "Add to Home Screen." On a computer use the install icon in the address bar, or just bookmark the link. There is no separate copy to download. Your data lives in this browser, so always open it from the same place.</div>
+      <div style="margin-bottom:8px;"><span style="color:var(--accent);font-weight:700;">2.</span> Pick your current phase below (Phase 1, Phase 2, or Funded) before you log anything. Each phase keeps its own trades, balance, and targets. You can also set the phase right on the Log Trade screen for each trade.</div>
+      <div style="margin-bottom:8px;"><span style="color:var(--accent);font-weight:700;">3.</span> Back up often. Tap "Export backup" in the bottom left to save a file of everything. That file is how you move your journal to a new phone or restore it if your browser data is ever cleared.</div>
+    </div>
+  </div>
 
   <div class="balance-row">
     <div class="balance-input-wrap">
@@ -597,8 +610,17 @@ html,body{background:var(--bg);color:var(--text);font-family:var(--font);min-hei
     </div>
   </div>
   <div class="rule-item" id="r-losses">
-    <div class="rule-left"><div class="rule-dot dot-green" id="r-losses-dot"></div><div><div class="rule-label">Loss count</div><div class="rule-sub" id="r-losses-sub">Stop trading at 3 losses</div></div></div>
-    <div class="rule-val green" id="r-losses-val">0 / 3</div>
+    <div class="rule-left"><div class="rule-dot dot-green" id="r-losses-dot"></div><div><div class="rule-label">Daily loss limit</div><div class="rule-sub" id="r-losses-sub">Stop trading at the limit</div></div></div>
+    <div style="text-align:right;">
+      <div style="display:flex;align-items:center;gap:6px;justify-content:flex-end;">
+        <select id="loss-mode-input" style="background:var(--surface2);border:1px solid var(--border);border-radius:6px;padding:4px 6px;color:var(--text);font-family:var(--mono);font-size:11px;outline:none;" onchange="updateDash();saveSetting()">
+          <option value="count">Losses</option>
+          <option value="pips">Pips lost</option>
+        </select>
+        <input type="number" id="loss-limit-input" placeholder="3" value="3" min="1" step="any" style="width:58px;background:var(--surface2);border:1px solid var(--border);border-radius:6px;padding:4px 7px;color:var(--text);font-family:var(--mono);font-size:12px;outline:none;" oninput="updateDash();saveSetting()">
+      </div>
+      <div class="rule-val green" id="r-losses-val" style="margin-top:3px;">0 / 3</div>
+    </div>
   </div>
   <div class="rule-item" id="r-risk">
     <div class="rule-left"><div class="rule-dot dot-green" id="r-risk-dot"></div><div><div class="rule-label">Daily P&L vs max risk</div><div class="rule-sub">Set your limit below</div></div></div>
@@ -621,10 +643,10 @@ html,body{background:var(--bg);color:var(--text);font-family:var(--font);min-hei
 
   <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;margin-bottom:16px;">
     <div class="phase-tabs" id="cal-phase-tabs" style="margin:0;">
-      <button class="phase-tab active-p1" onclick="calSetScope('p1')">Phase 1</button>
+      <button class="phase-tab" onclick="calSetScope('p1')">Phase 1</button>
       <button class="phase-tab" onclick="calSetScope('p2')">Phase 2</button>
       <button class="phase-tab" onclick="calSetScope('funded')">Funded</button>
-      <button class="phase-tab" onclick="calSetScope('all')">All</button>
+      <button class="phase-tab active-p1" onclick="calSetScope('all')">All</button>
     </div>
     <div style="display:flex;align-items:center;gap:8px;">
       <button class="btn btn-ghost btn-sm" onclick="calShiftMonth(-1)">‹ Prev</button>
@@ -707,6 +729,14 @@ html,body{background:var(--bg);color:var(--text);font-family:var(--font);min-hei
           </div>
         </div>
         <div class="form-group">
+          <label class="form-label">Phase this trade belongs to</label>
+          <select class="form-select" id="l-phase">
+            <option value="p1">Phase 1</option>
+            <option value="p2">Phase 2</option>
+            <option value="funded">Funded</option>
+          </select>
+        </div>
+        <div class="form-group">
           <label class="form-label">Direction</label>
           <div class="pill-group" id="dir-grp">
             <button class="pill on-g" onclick="selPill(this,'dir')">Long</button>
@@ -729,7 +759,7 @@ html,body{background:var(--bg);color:var(--text);font-family:var(--font);min-hei
         </div>
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
           <div class="form-group"><label class="form-label">Entry</label><input type="number" class="form-input" id="l-entry" placeholder="49420" oninput="calcPips()"></div>
-          <div class="form-group"><label class="form-label">Close</label><input type="number" class="form-input" id="l-close" placeholder="49520"></div>
+          <div class="form-group"><label class="form-label">Close</label><input type="number" class="form-input" id="l-close" placeholder="49520" oninput="calcPips()"></div>
           <div class="form-group"><label class="form-label">Stop loss</label><input type="number" class="form-input" id="l-sl" placeholder="49380" oninput="calcPips()"></div>
           <div class="form-group"><label class="form-label">Take profit</label><input type="number" class="form-input" id="l-tp" placeholder="49560" oninput="calcPips()"></div>
         </div>
@@ -757,6 +787,13 @@ html,body{background:var(--bg);color:var(--text);font-family:var(--font);min-hei
               <div id="l-rr" data-rr="0" style="font-size:16px;font-weight:700;font-family:var(--mono);color:var(--text);">—</div>
             </div>
           </div>
+        </div>
+        <div class="form-group">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;">
+            <label class="form-label" style="margin:0;">$ per pip / point <span style="font-size:9px;color:var(--faint);font-family:var(--mono);">(per your lot size)</span></label>
+            <input type="number" class="form-input" id="l-dollar-per-pip" placeholder="e.g. 1" step="any" min="0" oninput="autoCalcPnl()" style="width:110px;font-size:12px;padding:5px 8px;">
+          </div>
+          <div style="font-size:10px;color:var(--muted);font-family:var(--mono);line-height:1.5;">Set this once for your instrument and lot size. Net P&L below fills in automatically from your entry, close and this value. You can still type P&L manually.</div>
         </div>
         <div class="form-group">
           <label class="form-label">P&L</label>
@@ -788,27 +825,34 @@ html,body{background:var(--bg);color:var(--text);font-family:var(--font);min-hei
     </div>
     <div>
       <div class="card" style="margin-bottom:12px;">
-        <div class="section-label" style="margin-top:0;">Confluences</div>
-        <div class="pill-group" id="conf-grp" style="gap:7px;">
-          <button class="conf-pill" onclick="this.classList.toggle('on')">Trend (H1/H4)</button>
-          <button class="conf-pill" onclick="this.classList.toggle('on')">HTF S/R</button>
-          <button class="conf-pill" onclick="this.classList.toggle('on')">15M S/R</button>
-          <button class="conf-pill" onclick="this.classList.toggle('on')">BOS (1M)</button>
-          <button class="conf-pill" onclick="this.classList.toggle('on')">Retest</button>
-          <button class="conf-pill" onclick="this.classList.toggle('on')">Candlestick</button>
-          <button class="conf-pill" onclick="this.classList.toggle('on')">FVG</button>
-          <button class="conf-pill" onclick="this.classList.toggle('on')">Zone holding</button>
-          <button class="conf-pill" onclick="this.classList.toggle('on')">Liquidity sweep</button>
-          <button class="conf-pill" onclick="this.classList.toggle('on')">Equal highs/lows</button>
-          <button class="conf-pill" onclick="this.classList.toggle('on')">Clean body close</button>
-          <button class="conf-pill" onclick="this.classList.toggle('on')">Session open level</button>
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-top:0;">
+          <div class="section-label" style="margin:0;">Confluences</div>
+          <button class="btn btn-ghost btn-sm" onclick="toggleConfEditor()" style="font-size:10px;padding:3px 9px;">Edit list</button>
+        </div>
+        <div class="pill-group" id="conf-grp" style="gap:7px;"></div>
+        <div id="conf-editor" style="display:none;margin-top:10px;background:var(--surface2);border:1px solid var(--border2);border-radius:8px;padding:12px;">
+          <div style="font-size:11px;color:var(--muted);font-family:var(--mono);margin-bottom:7px;line-height:1.5;">One confluence per line. These are the buttons you tag trades with. Edit them to match your own plan.</div>
+          <textarea id="conf-editor-text" class="form-input" rows="8" style="font-size:12px;font-family:var(--mono);"></textarea>
+          <div style="display:flex;gap:8px;margin-top:9px;">
+            <button class="btn btn-primary btn-sm" onclick="saveConfluences()" style="flex:1;">Save list</button>
+            <button class="btn btn-ghost btn-sm" onclick="toggleConfEditor()" style="flex:1;">Cancel</button>
+            <button class="btn btn-ghost btn-sm" onclick="resetConfluences()" title="Restore the default TPS confluence list">Reset</button>
+          </div>
         </div>
         <div class="section-label">Plan adherence</div>
         <div class="form-group">
           <label class="form-label">Waited for candle close?</label>
           <div class="pill-group" id="candle-grp">
-            <button class="pill on-g" onclick="selPill(this,'candle');checkViol()">Yes</button>
-            <button class="pill" onclick="selPill(this,'candle');checkViol()">No</button>
+            <button class="pill on-g" onclick="selPill(this,'candle');onCandleChange()">Yes</button>
+            <button class="pill" onclick="selPill(this,'candle');onCandleChange()">No</button>
+          </div>
+          <div id="candle-followup" style="display:none;margin-top:9px;background:var(--surface2);border:1px solid var(--border2);border-radius:8px;padding:11px 12px;">
+            <label class="form-label" style="margin-bottom:6px;">Was this a planned entry (e.g. break and go) where waiting was not part of your rules?</label>
+            <div class="pill-group" id="candle-intent-grp">
+              <button class="pill" onclick="selPill(this,'candleIntent');checkViol()">Yes · planned</button>
+              <button class="pill" onclick="selPill(this,'candleIntent');checkViol()">No · I jumped early</button>
+            </div>
+            <div style="font-size:10px;color:var(--muted);font-family:var(--mono);margin-top:6px;line-height:1.5;">Planned entries are not counted as a rule violation. Only mark it a violation if you broke your own plan.</div>
           </div>
         </div>
         <div class="form-group">
@@ -827,13 +871,17 @@ html,body{background:var(--bg);color:var(--text);font-family:var(--font);min-hei
             <button class="pill" onclick="selPill(this,'emotion')">Fear</button>
           </div>
         </div>
-        <div class="violation-alert" id="viol-alert">⚠ Rule violation — you skipped candle close or deviated from the plan. Log it. Study it.</div>
+        <div class="violation-alert" id="viol-alert">⚠ Rule violation — you deviated from your plan (an early entry you did not plan, or you broke a rule). Log it. Study it.</div>
       </div>
       <div class="card">
         <div class="section-label" style="margin-top:0;">Notes</div>
         <div class="form-group"><label class="form-label">Pre-trade reasoning</label><textarea class="form-input" id="l-notes" rows="3" placeholder="Why did you take this setup?"></textarea></div>
         <div class="form-group"><label class="form-label">Post-trade lesson</label><textarea class="form-input" id="l-lesson" rows="2" placeholder="What did you learn or what would you do differently?"></textarea></div>
-        <button class="btn btn-primary" onclick="saveTrade()">Save trade →</button>
+        <div id="edit-mode-banner" style="display:none;background:var(--accent-dim);border:1px solid var(--accent);border-radius:8px;padding:9px 12px;margin-bottom:10px;font-size:11px;color:var(--accent);font-family:var(--mono);display:none;align-items:center;justify-content:space-between;gap:8px;">
+          <span>Editing an existing trade.</span>
+          <button class="btn btn-ghost btn-sm" onclick="cancelEditTrade()" style="font-size:10px;padding:3px 9px;">Cancel edit</button>
+        </div>
+        <button class="btn btn-primary" id="save-trade-btn" onclick="saveTrade()">Save trade →</button>
       </div>
     </div>
   </div>
@@ -1287,7 +1335,14 @@ html,body{background:var(--bg);color:var(--text);font-family:var(--font);min-hei
   <div class="section-label">Your bigger why</div>
   <div class="mantra-card"><div class="mantra-text">"I am building a business, not gambling. Every session is data — win or loss."</div><div class="mantra-sub">Trader mindset. Operator mindset. Never player mindset.</div></div>
   <div class="mantra-card"><div class="mantra-text">"My family is watching how I handle pressure. I lead by example — in the markets and at home."</div><div class="mantra-sub">Your why is bigger than any single trade. Remember that when it gets hard.</div></div>
-  <div class="mantra-card"><div class="mantra-text">"The student pays with time. The master pays with patience. I am building both."</div><div class="mantra-sub">For the coach and the trader in you — this is a long game.</div></div>
+  <div class="section-label">Your own affirmations · prayers · mantras</div>
+  <div class="card" style="margin-bottom:10px;">
+    <div style="display:flex;gap:8px;align-items:flex-start;">
+      <textarea id="user-mantra-input" class="form-input" rows="2" placeholder="Write your own affirmation, prayer, or mantra..." style="flex:1;font-size:13px;"></textarea>
+      <button class="btn btn-primary" onclick="addUserMantra()" style="white-space:nowrap;align-self:stretch;">Add</button>
+    </div>
+  </div>
+  <div id="user-mantra-list"></div>
 </div>
 
 <!-- ═══════════════════════════════════════════════
@@ -1547,6 +1602,9 @@ let dbTrades = [];
 let dbTradeImgs = {};
 let charts = {};
 let selDir='Long',selLot='—',selResult='Win',selCandle='Yes',selPlanF='Yes',selEmotion='No',selGradeVal='',selInstr='—';
+let selCandleIntent='';      // '', 'planned', 'unplanned' — clarifies a "No" candle-close answer
+let editingTradeId=null;     // when set, saveTrade() updates instead of creating
+let editingTradePhase=null;  // which phase the edited trade lives in
 
 // ═══════════════════════════════════════
 // INIT
@@ -1578,9 +1636,22 @@ window.onload = ()=>{
   if(s.startBal) document.getElementById('start-bal-input').value=s.startBal;
   if(s.maxRisk) document.getElementById('max-risk-input').value=s.maxRisk;
   if(s.maxTrades) { const mt=document.getElementById('max-trades-input'); if(mt) mt.value=s.maxTrades; }
+  const lm=document.getElementById('loss-mode-input'); if(lm) lm.value=s.lossMode||'count';
+  const ll=document.getElementById('loss-limit-input'); if(ll) ll.value=s.lossLimit||(s.lossMode==='pips'?'50':'3');
+  const dpp=localStorage.getItem('tps_dpp'); if(dpp){ const dp=document.getElementById('l-dollar-per-pip'); if(dp) dp.value=dpp; }
+  const lph=document.getElementById('l-phase'); if(lph) lph.value=activePhase;
+  if(localStorage.getItem('tps_hide_gs')==='1'){ const gs=document.getElementById('getting-started-card'); if(gs) gs.style.display='none'; }
+  renderConfluences();
+  renderUserMantras();
   initPsychScores();
   updateDash();
 };
+
+function dismissGettingStarted(){
+  localStorage.setItem('tps_hide_gs','1');
+  const c=document.getElementById('getting-started-card');
+  if(c) c.style.display='none';
+}
 
 // ═══════════════════════════════════════
 // NAV
@@ -1596,6 +1667,7 @@ function nav(id){
   if(id==='analytics') setTimeout(renderAnalytics,80);
   if(id==='performance') setTimeout(renderPerformance,80);
   if(id==='debrief-history') renderDebriefHistory();
+  if(id==='mantras') renderUserMantras();
   if(id==='backtest'){ renderTpsBtHistory(); renderTpsBtStats(); renderTpsBtAnalysis(); }
 }
 
@@ -1610,6 +1682,7 @@ function selPill(btn,grp){
   else if(grp==='candle'){selCandle=t;btn.classList.add(t==='Yes'?'on-g':'on-r');}
   else if(grp==='plan'){selPlanF=t;btn.classList.add(t==='Yes'?'on-g':'on-r');}
   else if(grp==='emotion'){selEmotion=t;btn.classList.add(t==='No'?'on-g':'on-r');}
+  else if(grp==='candleIntent'){selCandleIntent=t.indexOf('planned')>-1?'planned':'unplanned';btn.classList.add(selCandleIntent==='planned'?'on-g':'on-r');}
   else if(grp==='lot'){selLot=t;btn.classList.add('on');}
 }
 function selInstrument(btn, instr){
@@ -1663,6 +1736,7 @@ function calcPips(){
   else { tpEl.textContent='—'; tpEl.dataset.pips=0; }
   if(slPips>0&&tpPips>0){ const rr=tpPips/slPips; rrEl.textContent='1:'+rr.toFixed(2); rrEl.dataset.rr=rr; rrEl.style.color=rr>=2?'var(--green)':rr>=1?'var(--amber)':'var(--red)'; }
   else { rrEl.textContent='—'; rrEl.dataset.rr=0; rrEl.style.color='var(--text)'; }
+  autoCalcPnl();
 }
 
 function autoPipSize(){
@@ -1678,9 +1752,47 @@ function autoPipSize(){
   calcPips();
 }
 
+function realizedPips(){
+  const entry=parseFloat(document.getElementById('l-entry').value);
+  const close=parseFloat(document.getElementById('l-close').value);
+  const pipSize=parseFloat(document.getElementById('l-pipsize').value)||1;
+  if(isNaN(entry)||isNaN(close)) return null;
+  const raw=(close-entry)/pipSize;
+  return selDir==='Long' ? raw : -raw;   // positive = pips gained, negative = pips lost
+}
+
+function autoCalcPnl(){
+  const dpp=parseFloat(document.getElementById('l-dollar-per-pip')?.value);
+  const pips=realizedPips();
+  // Only auto-fill when we have both a close price and a $ per pip value
+  if(isNaN(dpp)||dpp<=0||pips===null) return;
+  const net=pips*dpp;
+  const profitEl=document.getElementById('l-profit');
+  const lossEl=document.getElementById('l-loss');
+  if(net>=0){ profitEl.value=net.toFixed(2); lossEl.value=''; }
+  else { lossEl.value=Math.abs(net).toFixed(2); profitEl.value=''; }
+  if(dpp>0){ localStorage.setItem('tps_dpp', String(dpp)); }
+  calcPnl();
+}
+
+function onCandleChange(){
+  const fu=document.getElementById('candle-followup');
+  if(selCandle==='No'){
+    fu.style.display='block';
+  } else {
+    fu.style.display='none';
+    selCandleIntent='';
+    document.querySelectorAll('#candle-intent-grp .pill').forEach(p=>p.classList.remove('on','on-g','on-r'));
+  }
+  checkViol();
+}
+
 function checkViol(){
   const a=document.getElementById('viol-alert');
-  a.style.display=(selCandle==='No'||selPlanF==='No')?'block':'none';
+  // Candle close only counts as a violation if the early entry was NOT planned.
+  const candleViol = selCandle==='No' && selCandleIntent!=='planned';
+  const planViol = selPlanF==='No';
+  a.style.display=(candleViol||planViol)?'block':'none';
 }
 
 // ═══════════════════════════════════════
@@ -1719,8 +1831,11 @@ function saveTrade(){
   const entry=document.getElementById('l-entry').value;
   if(!entry){alert('Enter an entry price.');return;}
   const confs=[...document.querySelectorAll('#conf-grp .conf-pill.on')].map(b=>b.textContent);
+  const targetPhase=document.getElementById('l-phase')?.value || activePhase;
+  const violation = (selCandle==='No' && selCandleIntent!=='planned') || selPlanF==='No';
+  const rp=realizedPips();
   const t={
-    id:Date.now(),
+    id: editingTradeId || Date.now(),
     date:document.getElementById('l-date').value,
     time:document.getElementById('l-time').value,
     instrument:(document.getElementById('l-instrument')?.value.trim()||selInstr||'—'),
@@ -1734,30 +1849,140 @@ function saveTrade(){
     tpPips:parseFloat(document.getElementById('l-tp-pips')?.dataset.pips)||0,
     rr:parseFloat(document.getElementById('l-rr')?.dataset.rr)||0,
     pipSize:parseFloat(document.getElementById('l-pipsize')?.value)||1,
+    realizedPips: rp===null?0:rp,
+    dpp:parseFloat(document.getElementById('l-dollar-per-pip')?.value)||0,
     pnl:parseFloat(document.getElementById('l-pnl').value)||0,
-    candle:selCandle,plan:selPlanF,emotion:selEmotion,conf:confs,
+    candle:selCandle,candleIntent:selCandleIntent,plan:selPlanF,emotion:selEmotion,conf:confs,
     notes:document.getElementById('l-notes').value,
     lesson:document.getElementById('l-lesson').value,
-    violation:selCandle==='No'||selPlanF==='No'
+    phase:targetPhase,
+    violation:violation
   };
-  trades.push(t);
-  localStorage.setItem(phaseTradesKey(),JSON.stringify(trades));
+
+  if(editingTradeId){
+    // Update existing trade, moving it between phases if the phase was changed
+    const oldPhase = editingTradePhase || targetPhase;
+    if(oldPhase!==targetPhase){
+      const oldArr=JSON.parse(localStorage.getItem('tps_trades_'+oldPhase)||'[]').filter(x=>x.id!==editingTradeId);
+      localStorage.setItem('tps_trades_'+oldPhase,JSON.stringify(oldArr));
+      const newArr=JSON.parse(localStorage.getItem('tps_trades_'+targetPhase)||'[]');
+      newArr.push(t);
+      localStorage.setItem('tps_trades_'+targetPhase,JSON.stringify(newArr));
+    } else {
+      const arr=JSON.parse(localStorage.getItem('tps_trades_'+targetPhase)||'[]');
+      const i=arr.findIndex(x=>x.id===editingTradeId);
+      if(i>-1) arr[i]=t; else arr.push(t);
+      localStorage.setItem('tps_trades_'+targetPhase,JSON.stringify(arr));
+    }
+  } else {
+    const arr=JSON.parse(localStorage.getItem('tps_trades_'+targetPhase)||'[]');
+    arr.push(t);
+    localStorage.setItem('tps_trades_'+targetPhase,JSON.stringify(arr));
+  }
+
+  // Keep the in-memory active-phase array in sync
+  trades=JSON.parse(localStorage.getItem(phaseTradesKey())||'[]');
   saveSetting();
+  resetTradeForm();
+  updateDash();
+  nav('history');
+}
+
+function resetTradeForm(){
+  editingTradeId=null; editingTradePhase=null;
   ['l-entry','l-close','l-sl','l-tp','l-pnl','l-profit','l-loss','l-notes','l-lesson'].forEach(id=>{ const el=document.getElementById(id); if(el) el.value=''; });
   calcPips();
-  const display = document.getElementById('l-pnl-display');
+  const display=document.getElementById('l-pnl-display');
   if(display){ display.textContent='$0.00'; display.style.color='var(--muted)'; }
   document.querySelectorAll('#conf-grp .conf-pill').forEach(p=>p.classList.remove('on'));
   document.getElementById('viol-alert').style.display='none';
-  updateDash();
-  nav('history');
+  const fu=document.getElementById('candle-followup'); if(fu) fu.style.display='none';
+  selCandleIntent='';
+  document.querySelectorAll('#candle-intent-grp .pill').forEach(p=>p.classList.remove('on','on-g','on-r'));
+  const btn=document.getElementById('save-trade-btn'); if(btn) btn.textContent='Save trade →';
+  const banner=document.getElementById('edit-mode-banner'); if(banner) banner.style.display='none';
+  const sub=document.getElementById('log-sub'); if(sub) sub.textContent="Capture every detail while it's fresh";
+}
+
+function cancelEditTrade(){ resetTradeForm(); nav('history'); }
+
+function setPill(grp, value){
+  // Programmatically select a pill in a group by its target state value
+  const map={dir:'#dir-grp',result:'#result-grp',candle:'#candle-grp',plan:'#plan-grp',emotion:'#emotion-grp'};
+  const sel=map[grp]; if(!sel) return;
+  const btns=document.querySelectorAll(sel+' .pill');
+  btns.forEach(b=>{
+    const t=b.textContent.trim();
+    const match=(grp==='dir'&&t===value)||(grp==='result'&&t===value)||(grp==='candle'&&t===value)||(grp==='plan'&&t===value)||(grp==='emotion'&&t===value);
+    if(match){ b.click(); }
+  });
+}
+
+function editTrade(id){
+  const found=findTradeAnyPhase(id);
+  if(!found){ alert('Could not find that trade to edit.'); return; }
+  const t=found.trade;
+  editingTradeId=t.id; editingTradePhase=found.phase;
+  closeModal();
+  nav('log');
+  // Basic fields
+  const setVal=(elId,v)=>{ const el=document.getElementById(elId); if(el) el.value=(v===undefined||v===null)?'':v; };
+  setVal('l-instrument', t.instrument&&t.instrument!=='—'?t.instrument:''); selInstr=t.instrument||'—';
+  setVal('l-date', t.date); setVal('l-time', t.time);
+  setVal('l-lot-input', t.lot&&t.lot!=='—'?t.lot:''); selLot=t.lot||'—';
+  const phaseSel=document.getElementById('l-phase'); if(phaseSel) phaseSel.value=found.phase;
+  const setupSel=document.getElementById('l-setup'); if(setupSel&&t.setup){ [...setupSel.options].forEach(o=>{ if(o.value===t.setup||o.textContent===t.setup) setupSel.value=o.value; }); }
+  setVal('l-entry', t.entry||''); setVal('l-close', t.close||'');
+  setVal('l-sl', t.sl||''); setVal('l-tp', t.tp||'');
+  const pipSel=document.getElementById('l-pipsize'); if(pipSel&&t.pipSize) pipSel.value=String(t.pipSize);
+  setVal('l-dollar-per-pip', t.dpp||'');
+  // Pills
+  setPill('dir', t.dir||'Long');
+  setPill('result', t.result||'Win');
+  setPill('candle', t.candle||'Yes');
+  setPill('plan', t.plan||'Yes');
+  setPill('emotion', t.emotion||'No');
+  // Candle intent (if it was a planned early entry)
+  selCandleIntent=t.candleIntent||'';
+  if(t.candle==='No'){
+    const fu=document.getElementById('candle-followup'); if(fu) fu.style.display='block';
+    if(selCandleIntent){
+      document.querySelectorAll('#candle-intent-grp .pill').forEach(b=>{
+        const planned=b.textContent.indexOf('planned')>-1;
+        b.classList.remove('on','on-g','on-r');
+        if((selCandleIntent==='planned'&&planned)||(selCandleIntent==='unplanned'&&!planned)) b.classList.add(selCandleIntent==='planned'?'on-g':'on-r');
+      });
+    }
+  }
+  // Confluences
+  document.querySelectorAll('#conf-grp .conf-pill').forEach(b=>{ b.classList.toggle('on', !!(t.conf&&t.conf.indexOf(b.textContent)>-1)); });
+  // P&L
+  if((t.pnl||0)>=0){ setVal('l-profit', t.pnl?Math.abs(t.pnl).toFixed(2):''); setVal('l-loss',''); }
+  else { setVal('l-loss', Math.abs(t.pnl).toFixed(2)); setVal('l-profit',''); }
+  setVal('l-notes', t.notes); setVal('l-lesson', t.lesson);
+  calcPips(); calcPnl(); checkViol();
+  const btn=document.getElementById('save-trade-btn'); if(btn) btn.textContent='Update trade →';
+  const banner=document.getElementById('edit-mode-banner'); if(banner) banner.style.display='flex';
+  const sub=document.getElementById('log-sub'); if(sub) sub.textContent='Editing a saved trade · make your fix and update';
+  window.scrollTo(0,0);
+}
+
+function findTradeAnyPhase(id){
+  for(const p of ['p1','p2','funded']){
+    const arr=JSON.parse(localStorage.getItem('tps_trades_'+p)||'[]');
+    const tr=arr.find(x=>x.id===id);
+    if(tr) return {trade:tr, phase:p};
+  }
+  return null;
 }
 
 function saveSetting(){
   localStorage.setItem(phaseSettingsKey(),JSON.stringify({
     startBal:document.getElementById('start-bal-input').value,
     maxRisk:document.getElementById('max-risk-input').value,
-    maxTrades:document.getElementById('max-trades-input')?.value||'5'
+    maxTrades:document.getElementById('max-trades-input')?.value||'5',
+    lossMode:document.getElementById('loss-mode-input')?.value||'count',
+    lossLimit:document.getElementById('loss-limit-input')?.value||'3'
   }));
 }
 
@@ -1772,6 +1997,15 @@ function updateDash(){
   const tod=trades.filter(t=>t.date===today);
   const todPnl=tod.reduce((s,t)=>s+(t.pnl||0),0);
   const todLoss=tod.filter(t=>t.result==='Loss').length;
+  // Pips lost today (sum of adverse realized pips) for the pip-based daily loss limit
+  const pipsLostFor=(t)=>{
+    let rp = (typeof t.realizedPips==='number') ? t.realizedPips : null;
+    if(rp===null && t.entry && t.close && t.pipSize){
+      const raw=(t.close-t.entry)/t.pipSize; rp = t.dir==='Long'?raw:-raw;
+    }
+    return (rp!==null && rp<0) ? Math.abs(rp) : 0;
+  };
+  const todPipsLost=tod.reduce((s,t)=>s+pipsLostFor(t),0);
   const totalPnl=trades.reduce((s,t)=>s+(t.pnl||0),0);
   const wins=trades.filter(t=>t.result==='Win').length;
   const total=trades.length;
@@ -1803,7 +2037,12 @@ function updateDash(){
   const tpEl=document.getElementById('d-today-p');
   tpEl.textContent=(todPnl>=0?'+':'')+'$'+Math.abs(todPnl).toFixed(2);
   tpEl.className='stat-value '+(todPnl>=0?'green':'red');
-  document.getElementById('d-today-l').textContent=todLoss+' loss'+(todLoss!==1?'es':'')+' today';
+  const lossMode=document.getElementById('loss-mode-input')?.value || 'count';
+  if(lossMode==='pips'){
+    document.getElementById('d-today-l').textContent=Math.round(todPipsLost)+' pips lost today';
+  } else {
+    document.getElementById('d-today-l').textContent=todLoss+' loss'+(todLoss!==1?'es':'')+' today';
+  }
 
   // FTMO Phase tracking
   const acctSel = document.getElementById('acct-size');
@@ -1908,7 +2147,20 @@ function updateDash(){
   const remaining = maxTrades - tod.length;
   setRule('trades',tod.length,maxTrades,[`Max ${maxTrades} trades per session`,`${remaining} trade${remaining!==1?'s':''} remaining today`,'LIMIT REACHED — no more trades']);
   document.getElementById('d-today-t').nextElementSibling && (document.getElementById('d-today-t').nextElementSibling.textContent=`max ${maxTrades} per session`);
-  setRule('losses',todLoss,3,['Stop trading at 3 losses','One more loss = stop trading','STOP — close the platform now']);
+  // Daily loss limit — configurable as a count of losing trades or total pips lost
+  const lossLimit=parseFloat(document.getElementById('loss-limit-input')?.value) || (lossMode==='pips'?50:3);
+  const lossVal = lossMode==='pips' ? todPipsLost : todLoss;
+  const lEl=document.getElementById('r-losses');
+  const lDot=document.getElementById('r-losses-dot');
+  const lVal=document.getElementById('r-losses-val');
+  const lSub=document.getElementById('r-losses-sub');
+  const lShown = lossMode==='pips' ? Math.round(lossVal) : lossVal;
+  const lLimShown = lossMode==='pips' ? Math.round(lossLimit) : lossLimit;
+  const unit = lossMode==='pips' ? ' pips' : '';
+  lVal.textContent = lShown+' / '+lLimShown+unit;
+  if(lossVal>=lossLimit){ lEl.className='rule-item danger'; lDot.className='rule-dot dot-red'; lVal.style.color='var(--red)'; lSub.textContent=lossMode==='pips'?'STOP — pip loss limit hit':'STOP — close the platform now'; }
+  else if(lossVal>=lossLimit*0.75){ lEl.className='rule-item warn'; lDot.className='rule-dot dot-amber'; lVal.style.color='var(--amber)'; lSub.textContent='Close to your limit — trade carefully'; }
+  else { lEl.className='rule-item'; lDot.className='rule-dot dot-green'; lVal.style.color='var(--green)'; lSub.textContent=lossMode==='pips'?('Stop at '+lLimShown+' pips lost'):('Stop trading at '+lLimShown+' losses'); }
   const lossAmt=Math.abs(Math.min(todPnl,0));
   const riskEl=document.getElementById('r-risk');
   const riskDot=document.getElementById('r-risk-dot');
@@ -1962,6 +2214,10 @@ function setPhase(phase){
   if(startBalInput) startBalInput.value = s.startBal || '';
   if(maxRiskInput) maxRiskInput.value = s.maxRisk || '';
   if(maxTradesInput && s.maxTrades) maxTradesInput.value = s.maxTrades;
+  const lossModeInput=document.getElementById('loss-mode-input');
+  const lossLimitInput=document.getElementById('loss-limit-input');
+  if(lossModeInput) lossModeInput.value = s.lossMode || 'count';
+  if(lossLimitInput) lossLimitInput.value = s.lossLimit || (s.lossMode==='pips'?'50':'3');
 
   // Update balance label to show current phase
   const phaseLabels = {p1:'Phase 1', p2:'Phase 2', funded:'Funded'};
@@ -2023,7 +2279,9 @@ function renderHistory(){
 }
 function clearFilters(){document.getElementById('f-date').value='';document.getElementById('f-result').value='';document.getElementById('f-dir').value='';renderHistory();}
 function viewTrade(id){
-  const t=trades.find(x=>x.id===id);if(!t)return;
+  let t=trades.find(x=>x.id===id);
+  if(!t){ const f=findTradeAnyPhase(id); if(f) t=f.trade; }
+  if(!t)return;
   document.getElementById('modal-title').textContent=t.date+' · '+t.dir+' · '+t.setup;
   document.getElementById('modal-body').innerHTML=`
     <div class="modal-row"><span class="modal-key">Date / Time</span><span class="modal-val">${t.date} ${t.time||''}</span></div>
@@ -2043,11 +2301,20 @@ function viewTrade(id){
     ${t.violation?'<div style="background:var(--red-dim);border:1px solid rgba(248,113,113,0.3);border-radius:6px;padding:10px 13px;margin:10px 0;font-size:11px;color:var(--red);font-family:var(--mono);">⚠ Rule violation logged on this trade</div>':''}
     ${t.notes?`<div class="modal-row" style="flex-direction:column;align-items:flex-start;gap:5px;"><span class="modal-key">Pre-trade notes</span><span style="font-size:12px;color:var(--muted);line-height:1.6;">${t.notes}</span></div>`:''}
     ${t.lesson?`<div class="modal-row" style="flex-direction:column;align-items:flex-start;gap:5px;"><span class="modal-key">Lesson learned</span><span style="font-size:12px;color:var(--muted);line-height:1.6;">${t.lesson}</span></div>`:''}
-    <div style="margin-top:14px;"><button class="btn btn-ghost" style="color:var(--red);border-color:rgba(248,113,113,0.3);" onclick="delTrade(${t.id})">Delete trade</button></div>
+    <div style="margin-top:14px;display:flex;gap:8px;"><button class="btn btn-primary" onclick="editTrade(${t.id})">Edit trade</button><button class="btn btn-ghost" style="color:var(--red);border-color:rgba(248,113,113,0.3);" onclick="delTrade(${t.id})">Delete trade</button></div>
   `;
   document.getElementById('modal').style.display='flex';
 }
-function delTrade(id){if(!confirm('Delete this trade?'))return;trades=trades.filter(t=>t.id!==id);localStorage.setItem(phaseTradesKey(),JSON.stringify(trades));closeModal();renderHistory();updateDash();}
+function delTrade(id){
+  if(!confirm('Delete this trade?'))return;
+  const f=findTradeAnyPhase(id);
+  const ph=f?f.phase:activePhase;
+  const arr=JSON.parse(localStorage.getItem('tps_trades_'+ph)||'[]').filter(t=>t.id!==id);
+  localStorage.setItem('tps_trades_'+ph,JSON.stringify(arr));
+  trades=JSON.parse(localStorage.getItem(phaseTradesKey())||'[]');
+  closeModal();renderHistory();updateDash();
+  if(document.getElementById('panel-calendar')?.classList.contains('active')) renderCalendar();
+}
 function closeModal(){document.getElementById('modal').style.display='none';}
 
 // ═══════════════════════════════════════
@@ -3152,7 +3419,7 @@ function clearTpsBtHistory(){
 // CALENDAR
 // ═══════════════════════════════════════
 let calDate = new Date();
-let calScope = localStorage.getItem('tps_active_phase') || 'p1';
+let calScope = 'all';
 
 function calGetTrades(scope){
   // Pull trades from the relevant phase storage so the calendar stays in sync
@@ -3262,6 +3529,80 @@ function calOpenDay(ds){
   html += '<div style="margin-top:12px;font-size:11px;color:var(--faint);font-family:var(--mono);text-align:center;">Tap a trade to view full detail</div>';
   document.getElementById('modal-body').innerHTML = html;
   document.getElementById('modal').style.display = 'flex';
+}
+
+// ═══════════════════════════════════════
+// CONFLUENCES — user-editable list (Change 7)
+// ═══════════════════════════════════════
+const DEFAULT_CONFLUENCES=['Trend (H1/H4)','HTF S/R','15M S/R','BOS (1M)','Retest','Candlestick','FVG','Zone holding','Liquidity sweep','Equal highs/lows','Clean body close','Session open level'];
+function getConfluences(){
+  try{ const v=JSON.parse(localStorage.getItem('tps_confluences')||'null'); if(Array.isArray(v)&&v.length) return v; }catch(e){}
+  return DEFAULT_CONFLUENCES.slice();
+}
+function renderConfluences(){
+  const grp=document.getElementById('conf-grp');
+  if(!grp) return;
+  const list=getConfluences();
+  grp.innerHTML=list.map(c=>`<button class="conf-pill" onclick="this.classList.toggle('on')">${c.replace(/</g,'&lt;').replace(/>/g,'&gt;')}</button>`).join('');
+}
+function toggleConfEditor(){
+  const ed=document.getElementById('conf-editor');
+  if(!ed) return;
+  if(ed.style.display==='none'||!ed.style.display){
+    document.getElementById('conf-editor-text').value=getConfluences().join('\n');
+    ed.style.display='block';
+  } else {
+    ed.style.display='none';
+  }
+}
+function saveConfluences(){
+  const raw=document.getElementById('conf-editor-text').value;
+  const list=raw.split('\n').map(s=>s.trim()).filter(Boolean);
+  if(!list.length){ alert('Add at least one confluence, or tap Reset to restore the defaults.'); return; }
+  localStorage.setItem('tps_confluences',JSON.stringify(list));
+  renderConfluences();
+  document.getElementById('conf-editor').style.display='none';
+}
+function resetConfluences(){
+  if(!confirm('Restore the default TPS confluence list? Your custom list will be replaced.')) return;
+  localStorage.removeItem('tps_confluences');
+  document.getElementById('conf-editor-text').value=getConfluences().join('\n');
+  renderConfluences();
+}
+
+// ═══════════════════════════════════════
+// USER MANTRAS — affirmations / prayers (Change 8)
+// ═══════════════════════════════════════
+function getUserMantras(){
+  try{ const v=JSON.parse(localStorage.getItem('tps_user_mantras')||'[]'); if(Array.isArray(v)) return v; }catch(e){}
+  return [];
+}
+function renderUserMantras(){
+  const wrap=document.getElementById('user-mantra-list');
+  if(!wrap) return;
+  const list=getUserMantras();
+  if(!list.length){ wrap.innerHTML='<div style="font-size:12px;color:var(--faint);font-family:var(--mono);padding:4px 2px;">Nothing yet. Add your own words above.</div>'; return; }
+  wrap.innerHTML=list.map((m,i)=>`<div class="mantra-card" style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;">
+    <div class="mantra-text" style="margin:0;">"${String(m).replace(/</g,'&lt;').replace(/>/g,'&gt;')}"</div>
+    <button onclick="delUserMantra(${i})" title="Delete" style="background:none;border:none;color:var(--muted);font-size:15px;line-height:1;cursor:pointer;flex-shrink:0;">×</button>
+  </div>`).join('');
+}
+function addUserMantra(){
+  const input=document.getElementById('user-mantra-input');
+  const txt=(input?.value||'').trim();
+  if(!txt) return;
+  const list=getUserMantras();
+  list.push(txt);
+  localStorage.setItem('tps_user_mantras',JSON.stringify(list));
+  if(input) input.value='';
+  renderUserMantras();
+}
+function delUserMantra(i){
+  const list=getUserMantras();
+  if(i<0||i>=list.length) return;
+  list.splice(i,1);
+  localStorage.setItem('tps_user_mantras',JSON.stringify(list));
+  renderUserMantras();
 }
 </script>
 <script>
