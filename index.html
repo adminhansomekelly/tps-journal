@@ -349,6 +349,55 @@ html,body{background:var(--bg);color:var(--text);font-family:var(--font);min-hei
 </style>
 </head>
 <body>
+<!-- ═══════════════════════════════════════════════
+     CLOUD SYNC CONFIG (Supabase)
+     Paste your project URL and anon public key below.
+     While these are placeholders the app runs in
+     local-only mode, exactly as before.
+════════════════════════════════════════════════ -->
+<script>
+window.TPS_SUPABASE = {
+  url: 'https://fwwvpxiqbxogxwtnpagh.supabase.co',        // e.g. https://abcdefgh.supabase.co
+  anonKey: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZ3d3ZweGlxYnhvZ3h3dG5wYWdoIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODM4MTY1NDcsImV4cCI6MjA5OTM5MjU0N30.Y3GfpBY_1Kg9DFJGfAVO6WEQkiOtVH6dOULv_faGj60' // Settings → API → anon public
+};
+</script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
+
+<!-- ═══════════════════════════════════════════════
+     AUTH GATE — shown only when cloud sync is configured
+════════════════════════════════════════════════ -->
+<div id="auth-gate" style="display:none;position:fixed;inset:0;z-index:9999;background:var(--bg);align-items:center;justify-content:center;padding:20px;">
+  <div style="width:100%;max-width:400px;background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:32px 28px;box-shadow:0 8px 40px rgba(2,6,23,0.08);">
+    <div style="text-align:center;margin-bottom:22px;">
+      <div id="auth-logo-slot" style="margin:0 auto 14px;width:72px;height:72px;"></div>
+      <div style="font-family:var(--font);font-size:20px;font-weight:700;color:var(--text);">TPS Journal</div>
+      <div style="font-size:11px;color:var(--muted);font-family:var(--mono);letter-spacing:0.08em;margin-top:4px;">THE PROFIT SOCIETY</div>
+    </div>
+    <div id="auth-error" style="display:none;background:var(--red-dim);border:1px solid rgba(220,38,38,0.3);border-radius:8px;padding:10px 12px;font-size:12px;color:var(--red);margin-bottom:14px;line-height:1.5;"></div>
+    <div id="auth-notice" style="display:none;background:var(--accent-dim);border:1px solid var(--accent);border-radius:8px;padding:10px 12px;font-size:12px;color:var(--accent);margin-bottom:14px;line-height:1.5;"></div>
+    <div class="form-group" id="auth-name-row" style="display:none;">
+      <label class="form-label">Your name</label>
+      <input type="text" class="form-input" id="auth-name" placeholder="First and last name" autocomplete="name">
+    </div>
+    <div class="form-group">
+      <label class="form-label">Email</label>
+      <input type="email" class="form-input" id="auth-email" placeholder="you@email.com" autocomplete="email">
+    </div>
+    <div class="form-group">
+      <label class="form-label">Password</label>
+      <input type="password" class="form-input" id="auth-password" placeholder="••••••••" autocomplete="current-password" onkeydown="if(event.key==='Enter')authSubmit()">
+    </div>
+    <button class="btn btn-primary" id="auth-submit-btn" onclick="authSubmit()" style="width:100%;margin-top:4px;">Sign in →</button>
+    <div style="text-align:center;margin-top:14px;font-size:12px;color:var(--muted);">
+      <span id="auth-toggle-label">New here?</span>
+      <a href="#" id="auth-toggle-link" onclick="authToggleMode();return false;" style="color:var(--accent);font-weight:600;text-decoration:none;">Create an account</a>
+    </div>
+    <div style="text-align:center;margin-top:8px;">
+      <a href="#" onclick="authForgot();return false;" style="font-size:11px;color:var(--faint);text-decoration:none;">Forgot password?</a>
+    </div>
+    <div id="auth-syncing" style="display:none;text-align:center;margin-top:16px;font-size:12px;color:var(--accent);font-family:var(--mono);">Syncing your journal...</div>
+  </div>
+</div>
 <div class="app">
 
 <!-- SIDEBAR -->
@@ -410,6 +459,15 @@ html,body{background:var(--bg);color:var(--text);font-family:var(--font);min-hei
     Trading Plan
   </div>
   <div style="margin-top:auto;padding:14px 12px 8px;">
+    <div id="account-row" style="display:none;margin-bottom:10px;background:var(--surface2);border:1px solid var(--border2);border-radius:8px;padding:8px 10px;">
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;">
+        <div style="min-width:0;">
+          <div id="account-name" style="font-size:11px;font-weight:600;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;"></div>
+          <div id="account-sync-state" style="font-size:9px;color:var(--accent);font-family:var(--mono);letter-spacing:0.04em;">Synced</div>
+        </div>
+        <button onclick="authSignOut()" title="Sign out of this device" style="background:none;border:1px solid var(--border2);border-radius:6px;padding:4px 8px;font-size:10px;font-weight:600;color:var(--muted);cursor:pointer;font-family:var(--font);flex-shrink:0;">Sign out</button>
+      </div>
+    </div>
     <div style="font-size:9px;color:var(--faint);letter-spacing:0.14em;text-transform:uppercase;font-family:var(--mono);margin-bottom:8px;text-align:center;">Backup</div>
     <button onclick="exportBackup()" style="width:100%;background:var(--accent);color:#fff;border:none;border-radius:8px;padding:9px 12px;font-size:12px;font-weight:600;cursor:pointer;font-family:var(--font);display:flex;align-items:center;justify-content:center;gap:6px;">
       <svg width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M6 1v6M3.5 7.5L6 10l2.5-2.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/><path d="M1 10.5h10" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
@@ -441,7 +499,7 @@ html,body{background:var(--bg);color:var(--text);font-family:var(--font);min-hei
       <button onclick="dismissGettingStarted()" title="Hide this" style="background:none;border:none;color:var(--muted);font-size:16px;line-height:1;cursor:pointer;padding:0 2px;">×</button>
     </div>
     <div style="margin-top:10px;font-size:12px;color:var(--text);line-height:1.7;">
-      <div style="margin-bottom:8px;"><span style="color:var(--accent);font-weight:700;">1.</span> This page is your app. To keep it, install it or bookmark it. On your phone tap the browser share button and choose "Add to Home Screen." On a computer use the install icon in the address bar, or just bookmark the link. There is no separate copy to download. Your data lives in this browser, so always open it from the same place.</div>
+      <div style="margin-bottom:8px;"><span style="color:var(--accent);font-weight:700;">1.</span> This page is your app. To keep it, install it or bookmark it. On your phone tap the browser share button and choose "Add to Home Screen." On a computer use the install icon in the address bar, or just bookmark the link. If you signed in, your journal syncs to your account and follows you to any device. If there is no sign in screen, your data lives in this browser only, so always open it from the same place.</div>
       <div style="margin-bottom:8px;"><span style="color:var(--accent);font-weight:700;">2.</span> Pick your current phase below (Phase 1, Phase 2, or Funded) before you log anything. Each phase keeps its own trades, balance, and targets. You can also set the phase right on the Log Trade screen for each trade.</div>
       <div style="margin-bottom:8px;"><span style="color:var(--accent);font-weight:700;">3.</span> Back up often. Tap "Export backup" in the bottom left to save a file of everything. That file is how you move your journal to a new phone or restore it if your browser data is ever cleared.</div>
     </div>
@@ -1613,6 +1671,7 @@ window.onload = ()=>{
   // ── ISOLATION GUARD ──
   // On first open, only clear TPS-specific keys — never touch other journals' data
   if(!localStorage.getItem('tps_initialized')) {
+    window.__tpsInitWrite = true;   // cloud sync: never treat defaults as user edits
     localStorage.setItem('tps_initialized', '1');
     localStorage.setItem('tps_trades_p1',      '[]');
     localStorage.setItem('tps_trades_p2',      '[]');
@@ -1623,6 +1682,7 @@ window.onload = ()=>{
     localStorage.setItem('tps_settings_funded','{}');
     localStorage.setItem('tps_plan',           '[]');
     localStorage.setItem('tps_acct',           '{}');
+    window.__tpsInitWrite = false;
   }
 
   const d=new Date();
@@ -3604,6 +3664,308 @@ function delUserMantra(i){
   localStorage.setItem('tps_user_mantras',JSON.stringify(list));
   renderUserMantras();
 }
+</script>
+<script>
+/* ═══════════════════════════════════════════════════════════════
+   TPS CLOUD SYNC — Supabase auth + per-key journal sync
+   Local-first: the app always reads/writes localStorage. This module
+   mirrors every tps_ key to the cloud, pulls on login, and resolves
+   conflicts per key by most-recent timestamp (last write wins).
+   If TPS_SUPABASE is not configured, none of this runs.
+═══════════════════════════════════════════════════════════════ */
+(function(){
+  const cfg = window.TPS_SUPABASE || {};
+  const configured = cfg.url && cfg.anonKey &&
+    cfg.url.indexOf('PASTE_') === -1 && cfg.anonKey.indexOf('PASTE_') === -1 &&
+    cfg.url.indexOf('https://') === 0;
+
+  // Meta keys deliberately do NOT start with tps_ so they never sync or back up
+  const META_KEY  = '_tps_sync_meta';   // { tpsKey: isoTimestamp } local write times
+  const USER_KEY  = '_tps_sync_user';   // user id this device's data belongs to
+  const QUEUE_KEY = '_tps_sync_queue';  // keys awaiting push (survives reload)
+  const RELOAD_FLAG = '_tps_sync_reloaded';
+
+  let sb = null, session = null, signupMode = false, pushTimer = null, flushing = false;
+
+  const $ = id => document.getElementById(id);
+  const meta  = () => { try { return JSON.parse(localStorage.getItem(META_KEY)||'{}'); } catch(e){ return {}; } };
+  const setMeta = m => localStorage.setItem(META_KEY, JSON.stringify(m));
+  const queue = () => { try { return JSON.parse(localStorage.getItem(QUEUE_KEY)||'[]'); } catch(e){ return []; } };
+  const setQueue = q => localStorage.setItem(QUEUE_KEY, JSON.stringify([...new Set(q)]));
+  const tpsKeys = () => { const out=[]; for(let i=0;i<localStorage.length;i++){ const k=localStorage.key(i); if(k&&k.indexOf('tps_')===0) out.push(k); } return out; };
+
+  function syncState(text, tone){
+    const el = $('account-sync-state'); if(!el) return;
+    el.textContent = text;
+    el.style.color = tone==='warn' ? 'var(--amber)' : tone==='err' ? 'var(--red)' : 'var(--accent)';
+  }
+  function showErr(msg){ const e=$('auth-error'); if(e){ e.textContent=msg; e.style.display='block'; } const n=$('auth-notice'); if(n) n.style.display='none'; }
+  function showNotice(msg){ const n=$('auth-notice'); if(n){ n.textContent=msg; n.style.display='block'; } const e=$('auth-error'); if(e) e.style.display='none'; }
+
+  function showGate(){
+    const g=$('auth-gate'); if(!g) return;
+    // Borrow the sidebar logo so the gate carries the brand
+    const slot=$('auth-logo-slot');
+    if(slot && !slot.firstChild){
+      const src=document.querySelector('.logo img');
+      if(src){ const img=src.cloneNode(); img.style.cssText='width:72px;height:72px;border-radius:14px;object-fit:cover;'; slot.appendChild(img); }
+    }
+    g.style.display='flex';
+  }
+  function hideGate(){ const g=$('auth-gate'); if(g) g.style.display='none'; }
+
+  // ── Storage interception: every tps_ write is timestamped and queued ──
+  // IMPORTANT: stamping only begins after the first cloud pull completes
+  // (window.__tpsSyncReady). Writes before that — like the app's first-boot
+  // defaults — carry no timestamp, so the cloud copy always beats them.
+  function patchStorage(){
+    const origSet = localStorage.setItem.bind(localStorage);
+    const origDel = localStorage.removeItem.bind(localStorage);
+    localStorage.setItem = function(k, v){
+      const prev = localStorage.getItem(k);
+      origSet(k, v);
+      if(window.__tpsSyncReady && !window.__tpsInitWrite &&
+         typeof k==='string' && k.indexOf('tps_')===0 && prev!==String(v)){
+        const m=meta(); m[k]=new Date().toISOString(); setMeta(m);
+        setQueue(queue().concat([k]));
+        schedulePush();
+      }
+    };
+    localStorage.removeItem = function(k){
+      origDel(k);
+      if(window.__tpsSyncReady && !window.__tpsInitWrite &&
+         typeof k==='string' && k.indexOf('tps_')===0){
+        const m=meta(); m[k]=new Date().toISOString(); setMeta(m);
+        setQueue(queue().concat([k]));
+        schedulePush();
+      }
+    };
+  }
+
+  function schedulePush(){
+    if(!session) return;
+    syncState('Saving...','warn');
+    clearTimeout(pushTimer);
+    pushTimer = setTimeout(flushQueue, 1200);
+  }
+
+  async function flushQueue(){
+    if(!session || flushing) return;
+    const q = queue();
+    if(!q.length){ syncState('Synced'); return; }
+    flushing = true;
+    try{
+      const m = meta();
+      const ups=[], dels=[];
+      q.forEach(k=>{
+        const v = localStorage.getItem(k);
+        if(v===null) dels.push(k);
+        else ups.push({ user_id: session.user.id, key: k, value: v, updated_at: m[k]||new Date().toISOString() });
+      });
+      if(ups.length){
+        const { error } = await sb.from('journal_data').upsert(ups, { onConflict:'user_id,key' });
+        if(error) throw error;
+      }
+      for(const k of dels){
+        const { error } = await sb.from('journal_data').delete().eq('user_id', session.user.id).eq('key', k);
+        if(error) throw error;
+      }
+      setQueue([]);
+      syncState('Synced');
+    }catch(e){
+      syncState('Offline · will retry','warn');
+    }finally{
+      flushing = false;
+    }
+  }
+
+  // ── Pull on login: per-key last-write-wins, with first-device migration ──
+  async function pullAndMerge(){
+    const { data, error } = await sb.from('journal_data')
+      .select('key,value,updated_at').eq('user_id', session.user.id);
+    if(error) throw error;
+    const remote = {}; (data||[]).forEach(r=>remote[r.key]=r);
+
+    const deviceOwner = localStorage.getItem(USER_KEY);
+    const foreignDevice = deviceOwner && deviceOwner !== session.user.id;
+
+    if(foreignDevice){
+      // Different account than the one whose data sits on this device:
+      // never push that data up — wipe it, then take the cloud copy.
+      tpsKeys().forEach(k=>localStorage.removeItem(k));
+      localStorage.removeItem(META_KEY);
+      setQueue([]);
+    }
+    localStorage.setItem(USER_KEY, session.user.id);
+
+    // The first-boot guard must never re-fire and stomp pulled data with
+    // empty defaults, so mark the device initialized as part of the pull.
+    if(!localStorage.getItem('tps_initialized')){
+      window.__tpsInitWrite = true;
+      localStorage.setItem('tps_initialized','1');
+      window.__tpsInitWrite = false;
+    }
+
+    const m = meta();
+    let changedLocal = false;
+    const toPush = [];
+
+    if(!Object.keys(remote).length){
+      // Brand-new account in the cloud. If this device (owned by this user)
+      // already has journal data, migrate it up wholesale.
+      if(!foreignDevice && tpsKeys().length){
+        tpsKeys().forEach(k=>toPush.push(k));
+      }
+    } else {
+      // Merge per key
+      const seen = new Set();
+      Object.values(remote).forEach(r=>{
+        seen.add(r.key);
+        const localTime = m[r.key];
+        if(!localTime || new Date(r.updated_at) >= new Date(localTime)){
+          if(localStorage.getItem(r.key)!==r.value){
+            // Write via the ORIGINAL setter path is fine — remote wins, so
+            // stamp meta with the remote time and skip the push queue.
+            const q1 = queue().filter(k=>k!==r.key);
+            localStorage.setItem(r.key, r.value);   // patched: queues + stamps now
+            const m2 = meta(); m2[r.key]=r.updated_at; setMeta(m2);
+            setQueue(q1);                            // undo the queue add
+            changedLocal = true;
+          } else {
+            const m2 = meta(); m2[r.key]=r.updated_at; setMeta(m2);
+          }
+        } else {
+          toPush.push(r.key); // local is newer → push up
+        }
+      });
+      // Local keys the cloud has never seen → push up
+      tpsKeys().forEach(k=>{ if(!seen.has(k)) toPush.push(k); });
+    }
+
+    if(toPush.length){ setQueue(queue().concat(toPush)); await flushQueue(); }
+
+    // From here on, every tps_ write is a real user edit — start stamping.
+    window.__tpsSyncReady = true;
+
+    if(changedLocal && !sessionStorage.getItem(RELOAD_FLAG)){
+      sessionStorage.setItem(RELOAD_FLAG,'1');
+      location.reload();
+      return false; // reloading
+    }
+    sessionStorage.removeItem(RELOAD_FLAG);
+    return true;
+  }
+
+  async function onSignedIn(){
+    hideGate();
+    const syncing=$('auth-syncing'); if(syncing) syncing.style.display='none';
+    // Account row
+    const row=$('account-row');
+    if(row){
+      row.style.display='block';
+      let name = session.user.user_metadata?.display_name || session.user.email;
+      try{
+        const { data } = await sb.from('profiles').select('display_name,role').eq('user_id',session.user.id).single();
+        if(data?.display_name) name = data.display_name;
+        if(data?.role==='coach') name += ' · Coach';
+      }catch(e){}
+      const nameEl=$('account-name'); if(nameEl) nameEl.textContent=name;
+    }
+    syncState('Synced');
+    // Retry pushes when connectivity returns, and sweep periodically
+    window.addEventListener('online', flushQueue);
+    setInterval(flushQueue, 30000);
+    window.addEventListener('beforeunload', ()=>{ if(queue().length) flushQueue(); });
+  }
+
+  // ── Auth UI actions (exposed globally for the gate's buttons) ──
+  window.authToggleMode = function(){
+    signupMode = !signupMode;
+    $('auth-name-row').style.display = signupMode ? 'block' : 'none';
+    $('auth-submit-btn').textContent = signupMode ? 'Create account →' : 'Sign in →';
+    $('auth-toggle-label').textContent = signupMode ? 'Already a member?' : 'New here?';
+    $('auth-toggle-link').textContent = signupMode ? 'Sign in instead' : 'Create an account';
+    $('auth-error').style.display='none'; $('auth-notice').style.display='none';
+  };
+
+  window.authSubmit = async function(){
+    const email=($('auth-email').value||'').trim();
+    const password=$('auth-password').value||'';
+    if(!email || !password){ showErr('Enter your email and password.'); return; }
+    const btn=$('auth-submit-btn'); btn.disabled=true; btn.textContent='One moment...';
+    try{
+      if(signupMode){
+        const display_name=($('auth-name').value||'').trim();
+        const { data, error } = await sb.auth.signUp({ email, password, options:{ data:{ display_name } } });
+        if(error) throw error;
+        if(data.session){
+          session = data.session;
+          const syncing=$('auth-syncing'); if(syncing) syncing.style.display='block';
+          if(await pullAndMerge()) await onSignedIn();
+        } else {
+          showNotice('Account created. Check your email to confirm, then come back and sign in.');
+        }
+      } else {
+        const { data, error } = await sb.auth.signInWithPassword({ email, password });
+        if(error) throw error;
+        session = data.session;
+        const syncing=$('auth-syncing'); if(syncing) syncing.style.display='block';
+        if(await pullAndMerge()) await onSignedIn();
+      }
+    }catch(e){
+      showErr(e.message==='Invalid login credentials' ? 'Wrong email or password.' : (e.message||'Something went wrong. Try again.'));
+    }finally{
+      btn.disabled=false;
+      btn.textContent = signupMode ? 'Create account →' : 'Sign in →';
+    }
+  };
+
+  window.authForgot = async function(){
+    const email=($('auth-email').value||'').trim();
+    if(!email){ showErr('Type your email above first, then tap Forgot password.'); return; }
+    try{
+      const { error } = await sb.auth.resetPasswordForEmail(email, { redirectTo: location.href.split('#')[0] });
+      if(error) throw error;
+      showNotice('Password reset link sent. Check your email.');
+    }catch(e){ showErr(e.message||'Could not send the reset email.'); }
+  };
+
+  window.authSignOut = async function(){
+    if(queue().length){ await flushQueue(); }
+    const wipe = confirm('Sign out.\n\nAlso remove your journal data from THIS device?\n\nOK = remove it here (it stays safe in the cloud)\nCancel = keep a local copy on this device');
+    try{ await sb.auth.signOut(); }catch(e){}
+    if(wipe){
+      tpsKeys().forEach(k=>localStorage.removeItem(k));
+      localStorage.removeItem(META_KEY); localStorage.removeItem(USER_KEY); setQueue([]);
+    }
+    location.reload();
+  };
+
+  // ── Boot ──
+  async function boot(){
+    if(!configured) return;           // local-only mode: nothing changes
+    if(!window.supabase){ console.warn('Supabase library failed to load — running local-only.'); return; }
+    sb = window.supabase.createClient(cfg.url, cfg.anonKey);
+    patchStorage();
+    try{
+      const { data } = await sb.auth.getSession();
+      session = data?.session || null;
+    }catch(e){ session=null; }
+    if(!session){ showGate(); return; }
+    try{
+      if(await pullAndMerge()) await onSignedIn();
+    }catch(e){
+      // Cloud unreachable — let them use the journal locally.
+      // Edits made now are stamped so they win when connectivity returns.
+      window.__tpsSyncReady = true;
+      await onSignedIn();
+      syncState('Offline · will retry','warn');
+    }
+  }
+
+  if(document.readyState==='loading') document.addEventListener('DOMContentLoaded', boot);
+  else boot();
+})();
 </script>
 <script>
 /* PWA: register the service worker on secure origins (https or localhost) */

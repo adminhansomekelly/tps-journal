@@ -1,0 +1,309 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>TPS Coach Dashboard</title>
+<link rel="icon" href="favicon.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Syne:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#f4f6f8; --surface:#ffffff; --surface2:#f1f5f9; --surface3:#e9eef4;
+  --border:#e2e8f0; --border2:#cbd5e1;
+  --text:#0f172a; --muted:#64748b; --faint:#94a3b8;
+  --accent:#16a34a; --accent-dim:rgba(22,163,74,0.10);
+  --green:#16a34a; --green-dim:rgba(22,163,74,0.10);
+  --red:#dc2626; --red-dim:rgba(220,38,38,0.08);
+  --amber:#d97706; --blue:#2563eb; --blue-dim:rgba(37,99,235,0.10);
+  --font:'Syne',sans-serif; --mono:'DM Mono',monospace;
+}
+*{margin:0;padding:0;box-sizing:border-box;}
+body{background:var(--bg);color:var(--text);font-family:var(--font);min-height:100vh;}
+.wrap{max-width:1100px;margin:0 auto;padding:28px 20px 60px;}
+.topbar{display:flex;justify-content:space-between;align-items:center;margin-bottom:24px;flex-wrap:wrap;gap:12px;}
+.brand{font-size:20px;font-weight:700;}
+.brand span{display:block;font-size:10px;color:var(--muted);font-family:var(--mono);letter-spacing:0.12em;font-weight:400;margin-top:2px;}
+.card{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:20px;}
+.stat-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin-bottom:20px;}
+.stat{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:14px 16px;}
+.stat-label{font-size:9px;color:var(--muted);font-family:var(--mono);letter-spacing:0.1em;text-transform:uppercase;margin-bottom:6px;}
+.stat-value{font-size:22px;font-weight:700;font-family:var(--mono);}
+.green{color:var(--green);} .red{color:var(--red);} .accent{color:var(--accent);}
+table{width:100%;border-collapse:collapse;font-size:13px;}
+th{font-size:9px;color:var(--muted);font-family:var(--mono);letter-spacing:0.08em;text-transform:uppercase;text-align:left;padding:8px 10px;border-bottom:1px solid var(--border);}
+td{padding:11px 10px;border-bottom:1px solid var(--surface2);}
+tr.rowlink{cursor:pointer;} tr.rowlink:hover{background:var(--surface2);}
+.badge{display:inline-block;padding:2px 9px;border-radius:20px;font-size:10px;font-weight:600;font-family:var(--mono);}
+.badge-win{background:var(--green-dim);color:var(--green);}
+.badge-loss{background:var(--red-dim);color:var(--red);}
+.badge-p1{background:rgba(96,165,250,0.15);color:#2563eb;}
+.badge-p2{background:rgba(167,139,250,0.18);color:#7c3aed;}
+.badge-funded{background:var(--accent-dim);color:var(--accent);}
+.btn{border:none;border-radius:8px;padding:10px 16px;font-size:13px;font-weight:600;cursor:pointer;font-family:var(--font);}
+.btn-primary{background:var(--accent);color:#fff;}
+.btn-ghost{background:var(--surface);color:var(--text);border:1px solid var(--border2);}
+.form-label{display:block;font-size:11px;font-weight:600;color:var(--muted);margin-bottom:5px;}
+.form-input{width:100%;background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:10px 12px;font-size:13px;color:var(--text);font-family:var(--font);outline:none;}
+.form-input:focus{border-color:var(--accent);}
+.form-group{margin-bottom:14px;}
+.section-label{font-size:9px;color:var(--muted);font-family:var(--mono);letter-spacing:0.14em;text-transform:uppercase;margin:22px 0 10px;}
+#gate{position:fixed;inset:0;background:var(--bg);display:flex;align-items:center;justify-content:center;padding:20px;}
+.gate-card{width:100%;max-width:380px;background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:32px 28px;box-shadow:0 8px 40px rgba(2,6,23,0.08);}
+.msg{border-radius:8px;padding:10px 12px;font-size:12px;margin-bottom:14px;line-height:1.5;display:none;}
+.msg-err{background:var(--red-dim);border:1px solid rgba(220,38,38,0.3);color:var(--red);}
+.msg-ok{background:var(--accent-dim);border:1px solid var(--accent);color:var(--accent);}
+.empty{padding:36px 10px;text-align:center;color:var(--faint);font-family:var(--mono);font-size:12px;}
+#detail{display:none;}
+.back{color:var(--accent);font-weight:600;font-size:13px;cursor:pointer;text-decoration:none;display:inline-block;margin-bottom:14px;}
+@media(max-width:640px){ .hide-sm{display:none;} td,th{padding:8px 6px;} }
+</style>
+</head>
+<body>
+
+<!-- CONFIG: paste the SAME values as in index.html -->
+<script>
+window.TPS_SUPABASE = {
+  url: 'https://fwwvpxiqbxogxwtnpagh.supabase.co',
+  anonKey: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZ3d3ZweGlxYnhvZ3h3dG5wYWdoIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODM4MTY1NDcsImV4cCI6MjA5OTM5MjU0N30.Y3GfpBY_1Kg9DFJGfAVO6WEQkiOtVH6dOULv_faGj60'
+};
+</script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
+
+<!-- LOGIN GATE -->
+<div id="gate">
+  <div class="gate-card">
+    <div style="text-align:center;margin-bottom:20px;">
+      <div style="font-size:20px;font-weight:700;">Coach Dashboard</div>
+      <div style="font-size:10px;color:var(--muted);font-family:var(--mono);letter-spacing:0.12em;margin-top:3px;">THE PROFIT SOCIETY · TPS JOURNAL</div>
+    </div>
+    <div class="msg msg-err" id="g-err"></div>
+    <div class="form-group"><label class="form-label">Email</label><input type="email" class="form-input" id="g-email" autocomplete="email"></div>
+    <div class="form-group"><label class="form-label">Password</label><input type="password" class="form-input" id="g-pass" autocomplete="current-password" onkeydown="if(event.key==='Enter')gLogin()"></div>
+    <button class="btn btn-primary" id="g-btn" style="width:100%;" onclick="gLogin()">Sign in →</button>
+    <div style="font-size:11px;color:var(--faint);text-align:center;margin-top:14px;line-height:1.5;">Coach access only. Students use the journal app itself.</div>
+  </div>
+</div>
+
+<!-- DASHBOARD -->
+<div class="wrap" id="dash" style="display:none;">
+  <div class="topbar">
+    <div class="brand">Coach Dashboard<span>THE PROFIT SOCIETY · TPS JOURNAL</span></div>
+    <div style="display:flex;gap:8px;align-items:center;">
+      <button class="btn btn-ghost" onclick="loadAll()" title="Reload student data">Refresh</button>
+      <button class="btn btn-ghost" onclick="signOut()">Sign out</button>
+    </div>
+  </div>
+
+  <!-- ROSTER VIEW -->
+  <div id="roster">
+    <div class="stat-grid">
+      <div class="stat"><div class="stat-label">Students</div><div class="stat-value" id="s-count">—</div></div>
+      <div class="stat"><div class="stat-label">Trades logged</div><div class="stat-value" id="s-trades">—</div></div>
+      <div class="stat"><div class="stat-label">Combined P&L</div><div class="stat-value" id="s-pnl">—</div></div>
+      <div class="stat"><div class="stat-label">Active this week</div><div class="stat-value accent" id="s-active">—</div></div>
+    </div>
+    <div class="card">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;flex-wrap:wrap;gap:8px;">
+        <div style="font-weight:700;">Students</div>
+        <input type="text" class="form-input" id="s-search" placeholder="Search name or email..." style="max-width:240px;" oninput="renderRoster()">
+      </div>
+      <div style="overflow-x:auto;">
+      <table>
+        <thead><tr>
+          <th>Student</th><th>Trades</th><th>P&L</th><th>Win rate</th>
+          <th class="hide-sm">Violations</th><th class="hide-sm">Last trade</th><th></th>
+        </tr></thead>
+        <tbody id="roster-body"></tbody>
+      </table>
+      </div>
+      <div class="empty" id="roster-empty" style="display:none;">No students yet. They appear here after they create an account in the journal.</div>
+    </div>
+  </div>
+
+  <!-- STUDENT DETAIL VIEW -->
+  <div id="detail">
+    <a class="back" onclick="showRoster()">← Back to all students</a>
+    <div class="card" style="margin-bottom:14px;">
+      <div style="font-size:18px;font-weight:700;" id="d-name"></div>
+      <div style="font-size:11px;color:var(--muted);font-family:var(--mono);margin-top:3px;" id="d-email"></div>
+    </div>
+    <div class="stat-grid" id="d-stats"></div>
+    <div class="section-label">Per phase</div>
+    <div class="card" style="margin-bottom:14px;overflow-x:auto;">
+      <table>
+        <thead><tr><th>Phase</th><th>Trades</th><th>P&L</th><th>Win rate</th><th class="hide-sm">Violations</th></tr></thead>
+        <tbody id="d-phase-body"></tbody>
+      </table>
+    </div>
+    <div class="section-label">Recent trades (all phases, newest first)</div>
+    <div class="card" style="overflow-x:auto;">
+      <table>
+        <thead><tr><th>Date</th><th>Phase</th><th class="hide-sm">Instrument</th><th>Dir</th><th>P&L</th><th>Result</th><th class="hide-sm">Rule break</th></tr></thead>
+        <tbody id="d-trades-body"></tbody>
+      </table>
+      <div class="empty" id="d-trades-empty" style="display:none;">No trades logged yet.</div>
+    </div>
+  </div>
+</div>
+
+<script>
+const cfg = window.TPS_SUPABASE || {};
+const configured = cfg.url && cfg.anonKey && cfg.url.indexOf('PASTE_')===-1 && cfg.anonKey.indexOf('PASTE_')===-1;
+let sb=null, students=[], statsById={}, tradesById={};
+
+const $=id=>document.getElementById(id);
+const fmt=v=>'$'+Math.abs(Number(v)||0).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2});
+const esc=s=>String(s??'').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+const PHASES={p1:'Phase 1',p2:'Phase 2',funded:'Funded'};
+const PBADGE={p1:'badge-p1',p2:'badge-p2',funded:'badge-funded'};
+
+function err(m){ const e=$('g-err'); e.textContent=m; e.style.display='block'; }
+
+async function gLogin(){
+  const email=($('g-email').value||'').trim(), pass=$('g-pass').value||'';
+  if(!email||!pass){ err('Enter your email and password.'); return; }
+  const b=$('g-btn'); b.disabled=true; b.textContent='One moment...';
+  try{
+    const { data, error } = await sb.auth.signInWithPassword({ email, password: pass });
+    if(error) throw error;
+    await enter(data.session);
+  }catch(e){
+    err(e.message==='Invalid login credentials'?'Wrong email or password.':(e.message||'Sign in failed.'));
+  }finally{ b.disabled=false; b.textContent='Sign in →'; }
+}
+
+async function signOut(){ try{ await sb.auth.signOut(); }catch(e){} location.reload(); }
+
+async function enter(session){
+  // Must be a coach
+  const { data: prof, error } = await sb.from('profiles').select('role,display_name').eq('user_id',session.user.id).single();
+  if(error || !prof || prof.role!=='coach'){
+    err('This dashboard is for coaches. Your account is a student account — use the journal app instead.');
+    try{ await sb.auth.signOut(); }catch(e){}
+    return;
+  }
+  $('gate').style.display='none';
+  $('dash').style.display='block';
+  await loadAll();
+}
+
+async function loadAll(){
+  // All students
+  const { data: profs, error: pe } = await sb.from('profiles').select('user_id,email,display_name,role,created_at').order('created_at');
+  if(pe){ alert('Could not load students: '+pe.message); return; }
+  students=(profs||[]).filter(p=>p.role==='student');
+
+  // All trade + debrief rows in one query
+  const keys=['tps_trades_p1','tps_trades_p2','tps_trades_funded'];
+  const { data: rows, error: je } = await sb.from('journal_data').select('user_id,key,value,updated_at').in('key',keys);
+  if(je){ alert('Could not load journal data: '+je.message); return; }
+
+  tradesById={}; statsById={};
+  (rows||[]).forEach(r=>{
+    let arr=[]; try{ arr=JSON.parse(r.value||'[]'); }catch(e){}
+    if(!Array.isArray(arr)) return;
+    const phase=r.key.replace('tps_trades_','');
+    if(!tradesById[r.user_id]) tradesById[r.user_id]=[];
+    arr.forEach(t=>tradesById[r.user_id].push({...t, _phase:phase}));
+  });
+
+  const weekAgo=Date.now()-7*24*3600*1000;
+  let allTrades=0, allPnl=0, activeCount=0;
+  students.forEach(s=>{
+    const ts=tradesById[s.user_id]||[];
+    const wins=ts.filter(t=>t.result==='Win').length;
+    const pnl=ts.reduce((a,t)=>a+(Number(t.pnl)||0),0);
+    const viol=ts.filter(t=>t.violation).length;
+    const last=ts.map(t=>t.date).filter(Boolean).sort().pop()||null;
+    const perPhase={};
+    ['p1','p2','funded'].forEach(p=>{
+      const pt=ts.filter(t=>t._phase===p);
+      perPhase[p]={ n:pt.length, pnl:pt.reduce((a,t)=>a+(Number(t.pnl)||0),0),
+        wins:pt.filter(t=>t.result==='Win').length, viol:pt.filter(t=>t.violation).length };
+    });
+    statsById[s.user_id]={ n:ts.length, wins, pnl, viol, last, perPhase };
+    allTrades+=ts.length; allPnl+=pnl;
+    if(last && new Date(last).getTime()>=weekAgo) activeCount++;
+  });
+
+  $('s-count').textContent=students.length;
+  $('s-trades').textContent=allTrades;
+  const sp=$('s-pnl'); sp.textContent=(allPnl>=0?'+':'-')+fmt(allPnl); sp.className='stat-value '+(allPnl>=0?'green':'red');
+  $('s-active').textContent=activeCount;
+  renderRoster();
+}
+
+function renderRoster(){
+  const q=($('s-search').value||'').toLowerCase();
+  const body=$('roster-body');
+  const list=students.filter(s=>!q || (s.display_name||'').toLowerCase().includes(q) || (s.email||'').toLowerCase().includes(q));
+  $('roster-empty').style.display=list.length?'none':'block';
+  body.innerHTML=list.map(s=>{
+    const st=statsById[s.user_id]||{n:0,wins:0,pnl:0,viol:0,last:null};
+    const wr=st.n?Math.round(st.wins/st.n*100)+'%':'—';
+    return `<tr class="rowlink" onclick="showStudent('${s.user_id}')">
+      <td><strong>${esc(s.display_name||'(no name)')}</strong><br><span style="font-size:10px;color:var(--muted);font-family:var(--mono);">${esc(s.email||'')}</span></td>
+      <td style="font-family:var(--mono);">${st.n}</td>
+      <td style="font-family:var(--mono);color:${st.pnl>=0?'var(--green)':'var(--red)'};">${(st.pnl>=0?'+':'-')+fmt(st.pnl)}</td>
+      <td style="font-family:var(--mono);">${wr}</td>
+      <td class="hide-sm" style="font-family:var(--mono);color:${st.viol?'var(--red)':'var(--muted)'};">${st.viol}</td>
+      <td class="hide-sm" style="font-family:var(--mono);font-size:11px;">${st.last||'—'}</td>
+      <td style="color:var(--accent);font-weight:600;font-size:12px;">View →</td>
+    </tr>`;
+  }).join('');
+}
+
+function showRoster(){ $('detail').style.display='none'; $('roster').style.display='block'; }
+
+function showStudent(id){
+  const s=students.find(x=>x.user_id===id); if(!s) return;
+  const st=statsById[id]||{n:0,wins:0,pnl:0,viol:0,last:null,perPhase:{}};
+  $('roster').style.display='none'; $('detail').style.display='block';
+  $('d-name').textContent=s.display_name||'(no name)';
+  $('d-email').textContent=s.email||'';
+  const wr=st.n?Math.round(st.wins/st.n*100)+'%':'—';
+  $('d-stats').innerHTML=`
+    <div class="stat"><div class="stat-label">Trades</div><div class="stat-value">${st.n}</div></div>
+    <div class="stat"><div class="stat-label">Total P&L</div><div class="stat-value ${st.pnl>=0?'green':'red'}">${(st.pnl>=0?'+':'-')+fmt(st.pnl)}</div></div>
+    <div class="stat"><div class="stat-label">Win rate</div><div class="stat-value">${wr}</div></div>
+    <div class="stat"><div class="stat-label">Rule breaks</div><div class="stat-value ${st.viol?'red':''}">${st.viol}</div></div>
+    <div class="stat"><div class="stat-label">Last trade</div><div class="stat-value" style="font-size:15px;">${st.last||'—'}</div></div>`;
+  $('d-phase-body').innerHTML=['p1','p2','funded'].map(p=>{
+    const pp=st.perPhase[p]||{n:0,pnl:0,wins:0,viol:0};
+    const pwr=pp.n?Math.round(pp.wins/pp.n*100)+'%':'—';
+    return `<tr>
+      <td><span class="badge ${PBADGE[p]}">${PHASES[p]}</span></td>
+      <td style="font-family:var(--mono);">${pp.n}</td>
+      <td style="font-family:var(--mono);color:${pp.pnl>=0?'var(--green)':'var(--red)'};">${(pp.pnl>=0?'+':'-')+fmt(pp.pnl)}</td>
+      <td style="font-family:var(--mono);">${pwr}</td>
+      <td class="hide-sm" style="font-family:var(--mono);color:${pp.viol?'var(--red)':'var(--muted)'};">${pp.viol}</td>
+    </tr>`;
+  }).join('');
+  const ts=(tradesById[id]||[]).slice().sort((a,b)=>String(b.date||'').localeCompare(String(a.date||''))).slice(0,40);
+  $('d-trades-empty').style.display=ts.length?'none':'block';
+  $('d-trades-body').innerHTML=ts.map(t=>`<tr>
+    <td style="font-family:var(--mono);font-size:11px;">${esc(t.date||'—')}</td>
+    <td><span class="badge ${PBADGE[t._phase]||''}">${PHASES[t._phase]||t._phase}</span></td>
+    <td class="hide-sm">${esc(t.instrument||'—')}</td>
+    <td>${esc(t.dir||'—')}</td>
+    <td style="font-family:var(--mono);color:${(t.pnl||0)>=0?'var(--green)':'var(--red)'};">${((t.pnl||0)>=0?'+':'-')+fmt(t.pnl||0)}</td>
+    <td><span class="badge ${t.result==='Win'?'badge-win':t.result==='Loss'?'badge-loss':''}">${esc(t.result||'—')}</span></td>
+    <td class="hide-sm" style="color:${t.violation?'var(--red)':'var(--muted)'};font-family:var(--mono);font-size:11px;">${t.violation?'⚠ Yes':'—'}</td>
+  </tr>`).join('');
+  window.scrollTo(0,0);
+}
+
+// Boot
+(async function(){
+  if(!configured){
+    document.body.innerHTML='<div style="display:flex;align-items:center;justify-content:center;min-height:100vh;padding:30px;"><div style="max-width:460px;background:#fff;border:1px solid #e2e8f0;border-radius:12px;padding:28px;font-family:Syne,sans-serif;line-height:1.7;color:#0f172a;"><strong>Cloud sync is not configured yet.</strong><br>Open coach.html in a text editor and paste your Supabase URL and anon key into the TPS_SUPABASE block near the top, then reload this page. The setup guide walks you through it.</div></div>';
+    return;
+  }
+  sb=window.supabase.createClient(cfg.url,cfg.anonKey);
+  const { data } = await sb.auth.getSession();
+  if(data?.session){ await enter(data.session); }
+})();
+</script>
+</body>
+</html>
