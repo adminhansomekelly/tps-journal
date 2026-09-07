@@ -357,8 +357,8 @@ html,body{background:var(--bg);color:var(--text);font-family:var(--font);min-hei
 ════════════════════════════════════════════════ -->
 <script>
 window.TPS_SUPABASE = {
-  url: 'https://fwwvpxiqbxogxwtnpagh.supabase.co',        // e.g. https://abcdefgh.supabase.co
-  anonKey: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZ3d3ZweGlxYnhvZ3h3dG5wYWdoIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODM4MTY1NDcsImV4cCI6MjA5OTM5MjU0N30.Y3GfpBY_1Kg9DFJGfAVO6WEQkiOtVH6dOULv_faGj60' // Settings → API → anon public
+  url: 'https://fwwvpxiqbxogxwtnpagh.supabase.co',
+  anonKey: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZ3d3ZweGlxYnhvZ3h3dG5wYWdoIiwicm9sZSI6ImFub24iLCJpYXQiOj' // one paste needed: Supabase → Settings → API Keys → Legacy tab → anon public
 };
 </script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
@@ -654,6 +654,41 @@ window.TPS_SUPABASE = {
       <span class="pr-val" style="color:var(--accent);">80% to you</span>
     </div>
     <div style="margin-top:10px;font-size:11px;color:var(--muted);font-family:var(--mono);">No minimum profit target. Focus is capital preservation and consistent withdrawals.</div>
+  </div>
+
+  <!-- Payouts · withdrawals (funded phase only) -->
+  <div id="payout-card" class="card" style="margin-bottom:14px;display:none;">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+      <div style="font-size:12px;font-weight:600;color:var(--text);">Payouts · withdrawals</div>
+      <div style="font-size:12px;font-family:var(--mono);color:var(--accent);font-weight:600;" id="po-total">$0.00 withdrawn</div>
+    </div>
+    <div style="font-size:11px;color:var(--muted);font-family:var(--mono);line-height:1.6;margin-bottom:12px;">Record every payout you take. Your balance automatically drops by the amount withdrawn, so taking your full profit resets the account to its starting balance. Partial withdrawals work too.</div>
+    <div style="display:grid;grid-template-columns:150px 1fr 1fr auto;gap:8px;align-items:end;">
+      <div class="form-group" style="margin:0;">
+        <label class="form-label">Date</label>
+        <input type="date" class="form-input" id="po-date">
+      </div>
+      <div class="form-group" style="margin:0;">
+        <label class="form-label">Amount withdrawn ($) <a href="#" onclick="poUseFullProfit();return false;" style="font-size:9px;color:var(--accent);text-decoration:none;font-family:var(--mono);">use full profit</a></label>
+        <input type="number" class="form-input" id="po-amount" placeholder="e.g. 8000" step="any" min="0">
+      </div>
+      <div class="form-group" style="margin:0;">
+        <label class="form-label">Note (optional)</label>
+        <input type="text" class="form-input" id="po-note" placeholder="e.g. First payout · wire">
+      </div>
+      <button class="btn btn-primary" onclick="recordPayout()" style="white-space:nowrap;">Record payout</button>
+    </div>
+    <div id="po-list" style="margin-top:12px;"></div>
+  </div>
+
+  <!-- Start over · resets -->
+  <div class="card" style="margin-bottom:14px;border:1px solid rgba(220,38,38,0.25);">
+    <div style="font-size:12px;font-weight:600;color:var(--text);margin-bottom:6px;">Start over</div>
+    <div style="font-size:11px;color:var(--muted);font-family:var(--mono);line-height:1.6;margin-bottom:12px;">For a blown account, a brand new funded account, or switching to a different account. Export a backup first (bottom left) if you want to keep a copy of your history.</div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;">
+      <button class="btn btn-ghost" onclick="resetPhaseData()" style="color:var(--red);border-color:rgba(220,38,38,0.35);" id="reset-phase-btn">Reset current phase</button>
+      <button class="btn btn-ghost" onclick="resetFullJournal()" style="color:var(--red);border-color:rgba(220,38,38,0.35);">Reset entire journal</button>
+    </div>
   </div>
 
   <div class="section-label">Session rule checker</div>
@@ -2071,8 +2106,13 @@ function updateDash(){
   const total=trades.length;
   const wr=total?Math.round(wins/total*100):null;
 
-  // Auto-calculate current balance from starting balance + total P&L
-  const autoBal = startBal > 0 ? startBal + totalPnl : 0;
+  // Auto-calculate current balance from starting balance + total P&L − payouts.
+  // Recording a payout lowers the balance by the withdrawn amount, so a
+  // full-profit payout returns the account to its starting balance.
+  const payoutsTotal = (typeof getPayouts==='function')
+    ? getPayouts().filter(p=>p.phase===activePhase).reduce((s,p)=>s+(Number(p.amount)||0),0)
+    : 0;
+  const autoBal = startBal > 0 ? startBal + totalPnl - payoutsTotal : 0;
   const currentBalance = autoBal;
   const balInput = document.getElementById('balance-input');
   if(balInput && startBal > 0) {
@@ -2283,6 +2323,11 @@ function setPhase(phase){
   const phaseLabels = {p1:'Phase 1', p2:'Phase 2', funded:'Funded'};
   const balLabel = document.querySelector('.balance-input-wrap label');
   if(balLabel) balLabel.innerHTML = 'Current balance <span style="font-size:9px;color:var(--faint);font-family:var(--mono);letter-spacing:0.04em;">(' + phaseLabels[phase] + ' · auto)</span>';
+
+  // Payouts are a funded-account feature
+  const poCard=document.getElementById('payout-card');
+  if(poCard) poCard.style.display = phase==='funded' ? 'block' : 'none';
+  if(typeof renderPayouts==='function') renderPayouts();
 
   updateDash();
 }
@@ -3657,12 +3702,91 @@ function addUserMantra(){
   if(input) input.value='';
   renderUserMantras();
 }
-function delUserMantra(i){
-  const list=getUserMantras();
-  if(i<0||i>=list.length) return;
-  list.splice(i,1);
-  localStorage.setItem('tps_user_mantras',JSON.stringify(list));
-  renderUserMantras();
+// ═══════════════════════════════════════
+// PAYOUTS — funded-account withdrawals
+// Balance math lives in updateDash: balance = start + P&L − payouts,
+// so a full-profit payout resets the account to its starting balance.
+// ═══════════════════════════════════════
+function getPayouts(){
+  try{ const v=JSON.parse(localStorage.getItem('tps_payouts')||'[]'); if(Array.isArray(v)) return v; }catch(e){}
+  return [];
+}
+function poEsc(s){ return String(s??'').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+function poUseFullProfit(){
+  const startBal=parseFloat(document.getElementById('start-bal-input').value)||0;
+  const totalPnl=trades.reduce((s,t)=>s+(t.pnl||0),0);
+  const paid=getPayouts().filter(p=>p.phase===activePhase).reduce((s,p)=>s+(Number(p.amount)||0),0);
+  const profit=totalPnl-paid;
+  if(profit<=0){ alert('No profit available to withdraw right now. Current profit after past payouts is $'+profit.toFixed(2)+'.'); return; }
+  document.getElementById('po-amount').value=profit.toFixed(2);
+}
+function recordPayout(){
+  const dateEl=document.getElementById('po-date');
+  const date=dateEl.value || new Date().toISOString().split('T')[0];
+  const amt=parseFloat(document.getElementById('po-amount').value);
+  const note=(document.getElementById('po-note').value||'').trim();
+  if(!amt || amt<=0){ alert('Enter the amount you withdrew.'); return; }
+  const list=getPayouts();
+  list.push({ id:Date.now(), phase:activePhase, date:date, amount:amt, note:note });
+  localStorage.setItem('tps_payouts', JSON.stringify(list));
+  document.getElementById('po-amount').value='';
+  document.getElementById('po-note').value='';
+  renderPayouts();
+  updateDash();
+}
+function delPayout(id){
+  if(!confirm('Delete this payout record? Your balance will go back up by the withdrawn amount.')) return;
+  const list=getPayouts().filter(p=>p.id!==id);
+  localStorage.setItem('tps_payouts', JSON.stringify(list));
+  renderPayouts();
+  updateDash();
+}
+function renderPayouts(){
+  const wrap=document.getElementById('po-list');
+  if(!wrap) return;
+  const dateEl=document.getElementById('po-date');
+  if(dateEl && !dateEl.value) dateEl.value=new Date().toISOString().split('T')[0];
+  const list=getPayouts().filter(p=>p.phase===activePhase).sort((a,b)=>String(b.date).localeCompare(String(a.date))||b.id-a.id);
+  const total=list.reduce((s,p)=>s+(Number(p.amount)||0),0);
+  const totalEl=document.getElementById('po-total');
+  if(totalEl) totalEl.textContent='$'+total.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2})+' withdrawn · '+list.length+' payout'+(list.length!==1?'s':'');
+  if(!list.length){
+    wrap.innerHTML='<div style="font-size:11px;color:var(--faint);font-family:var(--mono);padding:2px 0;">No payouts recorded yet. When you get paid, log it here and your balance resets by that amount.</div>';
+    return;
+  }
+  wrap.innerHTML=list.map(p=>`
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;padding:8px 10px;background:var(--surface2);border:1px solid var(--border);border-radius:8px;margin-bottom:6px;">
+      <div style="min-width:0;">
+        <span style="font-family:var(--mono);font-size:12px;color:var(--text);">${poEsc(p.date)}</span>
+        <span style="font-family:var(--mono);font-size:13px;font-weight:600;color:var(--accent);margin-left:10px;">−$${(Number(p.amount)||0).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2})}</span>
+        ${p.note?`<span style="font-size:11px;color:var(--muted);margin-left:10px;">${poEsc(p.note)}</span>`:''}
+      </div>
+      <button onclick="delPayout(${p.id})" title="Delete this payout record" style="background:none;border:none;color:var(--muted);font-size:15px;line-height:1;cursor:pointer;flex-shrink:0;">×</button>
+    </div>`).join('');
+}
+
+// ═══════════════════════════════════════
+// RESETS — blown account, new funded account, or fresh start
+// ═══════════════════════════════════════
+function resetPhaseData(){
+  const labels={p1:'Phase 1',p2:'Phase 2',funded:'Funded'};
+  const name=labels[activePhase]||activePhase;
+  if(!confirm('Reset '+name+'?\n\nThis clears ALL trades and payouts for '+name+' so you can start a new account here. Your settings, trading plan, debriefs, and the other phases are untouched.\n\nTip: tap Export backup (bottom left) first if you want to keep a copy.\n\nContinue?')) return;
+  localStorage.setItem(phaseTradesKey(activePhase), '[]');
+  const rest=getPayouts().filter(p=>p.phase!==activePhase);
+  localStorage.setItem('tps_payouts', JSON.stringify(rest));
+  trades=[];
+  renderPayouts();
+  renderHistory();
+  updateDash();
+  alert(name+' has been reset. Fresh account, fresh start.');
+}
+function resetFullJournal(){
+  if(!confirm('Reset the ENTIRE journal?\n\nThis clears trades in all three phases, all payouts, all daily debriefs, and all backtest logs. Your trading plan, mantras, confluences, and phase settings are kept.\n\nTip: tap Export backup (bottom left) first if you want to keep a copy.\n\nContinue?')) return;
+  if(!confirm('Last check — this cannot be undone except by restoring a backup file.\n\nReset everything now?')) return;
+  ['tps_trades_p1','tps_trades_p2','tps_trades_funded','tps_debriefs','tps_bt_trades','tps_payouts'].forEach(k=>localStorage.setItem(k,'[]'));
+  trades=[];
+  location.reload();
 }
 </script>
 <script>
@@ -3896,7 +4020,7 @@ function delUserMantra(i){
     try{
       if(signupMode){
         const display_name=($('auth-name').value||'').trim();
-        const { data, error } = await sb.auth.signUp({ email, password, options:{ data:{ display_name } } });
+        const { data, error } = await sb.auth.signUp({ email, password, options:{ data:{ display_name }, emailRedirectTo: location.href.split('#')[0] } });
         if(error) throw error;
         if(data.session){
           session = data.session;
