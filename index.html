@@ -1391,7 +1391,7 @@ window.TPS_SUPABASE = {
 ════════════════════════════════════════════════ -->
 <div class="panel" id="panel-history">
   <div class="page-title">History</div>
-  <div class="page-sub">Full trade log — click View on any row for details</div>
+  <div class="page-sub">Full trade log — click View on any row for details. The date filter matches the trading day, which runs 5:00pm ET the evening before to 4:59pm ET.</div>
   <div class="filter-bar">
     <input type="date" id="f-date" oninput="renderHistory()">
     <select id="f-result" onchange="renderHistory()"><option value="">All results</option><option>Win</option><option>Loss</option><option>Breakeven</option></select>
@@ -2770,7 +2770,7 @@ function renderHistory(){
   const rF=document.getElementById('f-result').value;
   const dirF=document.getElementById('f-dir').value;
   let ft=[...trades].reverse();
-  if(dF) ft=ft.filter(t=>t.date===dF);
+  if(dF) ft=ft.filter(t=>tpsSessionDay(t.date,t.time)===dF);
   if(rF) ft=ft.filter(t=>t.result===rF);
   if(dirF) ft=ft.filter(t=>t.dir===dirF);
   document.getElementById('f-count').textContent=ft.length+' trade'+(ft.length!==1?'s':'');
@@ -2780,14 +2780,14 @@ function renderHistory(){
   empty.style.display='none';
   body.innerHTML=ft.map(t=>`
     <tr>
-      <td style="font-family:var(--mono);font-size:11px;">${t.date}</td>
+      <td style="font-family:var(--mono);font-size:11px;">${t.date}${tpsSessionDay(t.date,t.time)!==t.date?`<div style="font-size:10px;color:var(--accent);">&rarr; ${tpsPrettyDay(tpsSessionDay(t.date,t.time))} session</div>`:''}</td>
       <td><span class="badge" style="background:${t.instrument==='XAU/USD'?'rgba(251,191,36,0.12)':'var(--blue-dim)'};color:${t.instrument==='XAU/USD'?'var(--amber)':'var(--blue)'};">${t.instrument||'US30'}</span></td>
       <td><span class="badge ${t.dir==='Long'?'badge-long':'badge-short'}">${t.dir}</span></td>
       <td style="color:var(--muted);font-size:11px;">${t.setup}</td>
       <td style="font-family:var(--mono);">${t.lot}</td>
       <td style="font-family:var(--mono);">${t.entry||'—'}</td>
       <td style="font-family:var(--mono);">${t.close||'—'}</td>
-      <td style="font-family:var(--mono);color:${(t.pnl||0)>=0?'var(--green)':'var(--red)'};">${(t.pnl>=0?'+':'')+'$'+Math.abs(t.pnl||0).toFixed(2)}</td>
+      <td style="font-family:var(--mono);color:${(t.pnl||0)>=0?'var(--green)':'var(--red)'};">${((t.pnl||0)>=0?'+':'-')+'$'+Math.abs(t.pnl||0).toFixed(2)}</td>
       <td><span class="badge ${t.result==='Win'?'badge-win':t.result==='Loss'?'badge-loss':'badge-be'}">${t.result}</span></td>
       <td><span style="font-size:10px;font-family:var(--mono);color:${t.violation?'var(--red)':'var(--muted)'};">${t.violation?'⚠ Viol.':'✓'}</span></td>
       <td><button class="btn btn-ghost btn-sm" onclick="viewTrade(${t.id})">View</button></td>
@@ -2799,9 +2799,10 @@ function viewTrade(id){
   let t=trades.find(x=>x.id===id);
   if(!t){ const f=findTradeAnyPhase(id); if(f) t=f.trade; }
   if(!t)return;
-  document.getElementById('modal-title').textContent=t.date+' · '+t.dir+' · '+t.setup;
+  document.getElementById('modal-title').textContent=tpsSessionDay(t.date,t.time)+' · '+t.dir+' · '+t.setup;
   document.getElementById('modal-body').innerHTML=`
     <div class="modal-row"><span class="modal-key">Date / Time</span><span class="modal-val">${t.date} ${t.time||''}</span></div>
+    <div class="modal-row"><span class="modal-key">Trading day</span><span class="modal-val"${tpsSessionDay(t.date,t.time)!==t.date?' style="color:var(--accent);"':''}>${tpsPrettyDay(tpsSessionDay(t.date,t.time))}</span></div>
     <div class="modal-row"><span class="modal-key">Instrument</span><span class="modal-val" style="color:${t.instrument==='XAU/USD'?'var(--amber)':'var(--blue)'};">${t.instrument||'US30'}</span></div>
     <div class="modal-row"><span class="modal-key">Direction</span><span class="modal-val">${t.dir}</span></div>
     <div class="modal-row"><span class="modal-key">Lot size</span><span class="modal-val">${t.lot}</span></div>
@@ -3262,7 +3263,7 @@ function renderAnalytics(){
 
   let run=0;
   const eqL=['Start'],eqD=[0];
-  [...trades].sort((a,b)=>a.date.localeCompare(b.date)).forEach(t=>{run+=(t.pnl||0);eqL.push(t.date);eqD.push(parseFloat(run.toFixed(2)));});
+  [...trades].sort((a,b)=>String(tpsSessionDay(a.date,a.time)).localeCompare(String(tpsSessionDay(b.date,b.time)))).forEach(t=>{run+=(t.pnl||0);eqL.push(tpsSessionDay(t.date,t.time));eqD.push(parseFloat(run.toFixed(2)));});
   if(charts.eq) charts.eq.destroy();
   charts.eq=new Chart(document.getElementById('eq-chart').getContext('2d'),{type:'line',data:{labels:eqL,datasets:[{data:eqD,borderColor:'#16a34a',backgroundColor:'rgba(22,163,74,0.07)',fill:true,tension:0.4,pointRadius:3,pointBackgroundColor:'#16a34a',borderWidth:2}]},options:{plugins:{legend:{display:false}},scales:{x:{ticks:{color:'#6b7280',font:{family:'DM Mono',size:9},maxTicksLimit:7},grid:{color:'rgba(0,0,0,0.05)'}},y:{ticks:{color:'#6b7280',font:{family:'DM Mono',size:9},callback:v=>'$'+v},grid:{color:'rgba(0,0,0,0.06)'}}},animation:false}});
 
@@ -3271,7 +3272,7 @@ function renderAnalytics(){
 
   const days=['Mon','Tue','Wed','Thu','Fri'];
   const dp=[0,0,0,0,0];
-  trades.forEach(t=>{const d=new Date(t.date+'T12:00:00').getDay();const i=d===1?0:d===2?1:d===3?2:d===4?3:d===5?4:-1;if(i>=0)dp[i]+=(t.pnl||0);});
+  trades.forEach(t=>{if(!t.date)return;const d=new Date(tpsSessionDay(t.date,t.time)+'T12:00:00').getDay();const i=d===1?0:d===2?1:d===3?2:d===4?3:d===5?4:-1;if(i>=0)dp[i]+=(t.pnl||0);});
   if(charts.dow) charts.dow.destroy();
   charts.dow=new Chart(document.getElementById('dow-chart').getContext('2d'),{type:'bar',data:{labels:days,datasets:[{data:dp,backgroundColor:dp.map(v=>v>=0?'rgba(22,163,74,0.7)':'rgba(220,38,38,0.7)'),borderRadius:5,borderWidth:0}]},options:{plugins:{legend:{display:false}},scales:{x:{ticks:{color:'#6b7280',font:{family:'DM Mono',size:11}},grid:{display:false}},y:{ticks:{color:'#6b7280',font:{family:'DM Mono',size:10},callback:v=>'$'+v},grid:{color:'rgba(0,0,0,0.05)'}}},animation:false}});
 }
@@ -3372,7 +3373,7 @@ function renderPerformance(){
   // Day of week
   const days={1:'Mon',2:'Tue',3:'Wed',4:'Thu',5:'Fri'};
   const dowMap={1:{pnl:0,total:0,wins:0},2:{pnl:0,total:0,wins:0},3:{pnl:0,total:0,wins:0},4:{pnl:0,total:0,wins:0},5:{pnl:0,total:0,wins:0}};
-  t.forEach(x=>{if(!x.date)return;const d=new Date(x.date+'T12:00:00').getDay();if(dowMap[d]){dowMap[d].pnl+=(x.pnl||0);dowMap[d].total++;if(x.result==='Win')dowMap[d].wins++;}});
+  t.forEach(x=>{if(!x.date)return;const d=new Date(tpsSessionDay(x.date,x.time)+'T12:00:00').getDay();if(dowMap[d]){dowMap[d].pnl+=(x.pnl||0);dowMap[d].total++;if(x.result==='Win')dowMap[d].wins++;}});
   const maxDowPnl=Math.max(...Object.values(dowMap).map(d=>Math.abs(d.pnl)),1);
   const dowEl=document.getElementById('perf-dow');
   if(dowEl)dowEl.innerHTML=Object.entries(dowMap).map(([d,data])=>`
@@ -3967,19 +3968,21 @@ function renderCalendar(){
 
   const allTrades = calGetTrades(calScope);
 
-  // Aggregate by day (local date string YYYY-MM-DD as stored)
+  // Aggregate by trading day (5:00pm ET rollover), so an evening trade lands
+  // on the session the broker counts it in, not the calendar date it was taken.
   const byDay = {};
   allTrades.forEach(t=>{
     if(!t.date) return;
-    if(!byDay[t.date]) byDay[t.date] = {pnl:0, count:0, wins:0};
-    byDay[t.date].pnl += (t.pnl||0);
-    byDay[t.date].count += 1;
-    if(t.result==='Win') byDay[t.date].wins += 1;
+    const sd = tpsSessionDay(t.date, t.time);
+    if(!byDay[sd]) byDay[sd] = {pnl:0, count:0, wins:0};
+    byDay[sd].pnl += (t.pnl||0);
+    byDay[sd].count += 1;
+    if(t.result==='Win') byDay[sd].wins += 1;
   });
 
   const firstDow = new Date(year, month, 1).getDay();
   const daysInMonth = new Date(year, month+1, 0).getDate();
-  const todayStr = new Date().toISOString().split('T')[0];
+  const todayStr = tpsNowSessionDay();
 
   let cells = '';
   for(let i=0;i<firstDow;i++) cells += '<div class="cal-cell empty"></div>';
@@ -4026,7 +4029,7 @@ function renderCalendar(){
 }
 
 function calOpenDay(ds){
-  const trades = calGetTrades(calScope).filter(t=>t.date===ds);
+  const trades = calGetTrades(calScope).filter(t=>tpsSessionDay(t.date,t.time)===ds);
   if(!trades.length) return;
   const dObj = new Date(ds+'T12:00:00');
   const dayPnl = trades.reduce((s,t)=>s+(t.pnl||0),0);
