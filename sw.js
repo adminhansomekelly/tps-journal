@@ -1,6 +1,6 @@
 /* TPS Journal service worker
    Bump CACHE_VERSION whenever you upload a new index.html so users get the update. */
-const CACHE_VERSION = 'tps-journal-v4';
+const CACHE_VERSION = 'tps-journal-v5';
 
 // App shell precached on install. Relative paths resolve to this folder.
 const SHELL = [

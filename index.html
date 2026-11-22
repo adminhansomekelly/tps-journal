@@ -69,6 +69,15 @@ html,body{background:var(--bg);color:var(--text);font-family:var(--font);min-hei
 .stat-value.red{color:var(--red);}
 .stat-value.accent{color:var(--accent);}
 .stat-change{font-size:11px;color:var(--muted);margin-top:3px;font-family:var(--mono);}
+/* Performance snapshot (range-filtered edge metrics) */
+.ps-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:12px;}
+.ps-charts{display:grid;grid-template-columns:1fr 1fr;gap:12px;}
+.ps-head{display:flex;align-items:flex-end;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-top:24px;margin-bottom:10px;}
+.ps-chart-box{height:186px;position:relative;}
+.ps-cap{font-size:11px;color:var(--muted);font-family:var(--mono);line-height:1.6;margin-top:10px;}
+.ps-note{font-size:11px;color:var(--faint);font-family:var(--mono);margin-top:10px;}
+@media(max-width:900px){.ps-grid{grid-template-columns:repeat(2,1fr);}.ps-charts{grid-template-columns:1fr;}}
+@media(max-width:620px){.ps-grid{grid-template-columns:1fr;}.ps-chart-box{height:160px;}}
 
 /* SESSION RULES */
 .rule-item{display:flex;align-items:center;justify-content:space-between;padding:13px 16px;border-radius:10px;margin-bottom:7px;border:1px solid var(--border);background:var(--surface2);}
@@ -528,6 +537,60 @@ window.TPS_SUPABASE = {
     <div class="stat-card"><div class="stat-label">Today Trades</div><div class="stat-value" id="d-today-t">0</div><div class="stat-change">max 5 per session</div></div>
     <div class="stat-card"><div class="stat-label">Today P&L</div><div class="stat-value" id="d-today-p">$0</div><div class="stat-change" id="d-today-l">0 losses</div></div>
   </div>
+
+  <!-- ══ PERFORMANCE SNAPSHOT ══ -->
+  <div class="ps-head">
+    <div class="section-label" style="margin:0;">Performance <span id="ps-range-label" style="color:var(--faint);">· all time</span></div>
+    <div class="pill-group" id="ps-range-grp">
+      <button class="pill" data-days="7" onclick="psSetRange(this)">7D</button>
+      <button class="pill" data-days="30" onclick="psSetRange(this)">30D</button>
+      <button class="pill" data-days="90" onclick="psSetRange(this)">90D</button>
+      <button class="pill on" data-days="0" onclick="psSetRange(this)">All</button>
+    </div>
+  </div>
+
+  <div class="ps-grid">
+    <div class="stat-card">
+      <div class="stat-label">Profit factor</div>
+      <div class="stat-value" id="d-pf">—</div>
+      <div class="stat-change" id="d-pf-sub">gross profit ÷ gross loss</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">Avg win / loss</div>
+      <div class="stat-value" id="d-rr">—</div>
+      <div class="stat-change" id="d-rr-sub">log some trades to see this</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">Day win rate</div>
+      <div class="stat-value accent" id="d-dwr">—</div>
+      <div class="stat-change" id="d-dwr-sub">0 green / 0 trading days</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">W / BE / L</div>
+      <div class="stat-value" id="d-wbl">0 / 0 / 0</div>
+      <div class="stat-change" id="d-wbl-sub">0 trades in range</div>
+    </div>
+  </div>
+
+  <div class="ps-charts">
+    <div class="card" style="padding:16px 18px;">
+      <div style="display:flex;align-items:baseline;justify-content:space-between;gap:10px;">
+        <div class="stat-label" style="margin:0;">Cumulative P&amp;L</div>
+        <div class="stat-change" id="d-eq-val" style="margin:0;font-weight:700;">—</div>
+      </div>
+      <div class="ps-chart-box" style="margin-top:10px;"><canvas id="dash-eq-chart"></canvas></div>
+      <div class="ps-cap" id="d-eq-cap">No trades logged yet in this phase.</div>
+    </div>
+    <div class="card" style="padding:16px 18px;">
+      <div style="display:flex;align-items:baseline;justify-content:space-between;gap:10px;">
+        <div class="stat-label" style="margin:0;">Drawdown from peak</div>
+        <div class="stat-change" id="d-dd-val" style="margin:0;font-weight:700;">—</div>
+      </div>
+      <div class="ps-chart-box" style="margin-top:10px;"><canvas id="dash-dd-chart"></canvas></div>
+      <div class="ps-cap" id="d-dd-cap">Drawdown is measured from your highest balance so far, not from your starting balance.</div>
+    </div>
+  </div>
+  <div class="ps-note">These four numbers and both charts follow the range you picked above. The challenge tracker below always uses your full phase history, because that is how the firm measures you.</div>
 
   <div class="section-label">Challenge &amp; funded account tracker</div>
 
@@ -1694,6 +1757,7 @@ let psychScores = {1:0,2:0,3:0,4:0,5:0};
 let dbTrades = [];
 let dbTradeImgs = {};
 let charts = {};
+let psRangeDays = 0;   // 0 = all time; otherwise trailing window in days
 let selDir='Long',selLot='—',selResult='Win',selCandle='Yes',selPlanF='Yes',selEmotion='No',selGradeVal='',selInstr='—';
 let selCandleIntent='';      // '', 'planned', 'unplanned' — clarifies a "No" candle-close answer
 let editingTradeId=null;     // when set, saveTrade() updates instead of creating
@@ -1739,6 +1803,7 @@ window.onload = ()=>{
   renderConfluences();
   renderUserMantras();
   initPsychScores();
+  psRestoreRange();
   updateDash();
 };
 
@@ -1757,6 +1822,7 @@ function nav(id){
   document.querySelectorAll('.nav-item').forEach((n,i)=>{ if(ids[i]===id) n.classList.add('active'); });
   document.querySelectorAll('.panel').forEach(p=>p.classList.remove('active'));
   document.getElementById('panel-'+id).classList.add('active');
+  if(id==='dashboard') setTimeout(renderPerfSnapshot,60);
   if(id==='history') renderHistory();
   if(id==='calendar') renderCalendar();
   if(id==='analytics') setTimeout(renderAnalytics,80);
@@ -2269,6 +2335,229 @@ function updateDash(){
   if(maxRisk&&lossAmt>=maxRisk){riskEl.className='rule-item danger';riskDot.className='rule-dot dot-red';riskVal.style.color='var(--red)';}
   else if(maxRisk&&lossAmt>=maxRisk*0.75){riskEl.className='rule-item warn';riskDot.className='rule-dot dot-amber';riskVal.style.color='var(--amber)';}
   else{riskEl.className='rule-item';riskDot.className='rule-dot dot-green';riskVal.style.color='var(--green)';}
+
+  try { renderPerfSnapshot(); } catch(e) { console.warn('[perf snapshot]', e); }
+}
+
+// ═══════════════════════════════════════
+// PERFORMANCE SNAPSHOT — edge metrics + equity and drawdown charts
+// ═══════════════════════════════════════
+function psLocalDateStr(d){
+  return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
+}
+
+function psSetRange(btn){
+  psRangeDays = parseInt(btn.dataset.days,10) || 0;
+  const grp = document.getElementById('ps-range-grp');
+  if(grp) grp.querySelectorAll('.pill').forEach(p=>p.classList.remove('on'));
+  btn.classList.add('on');
+  try { localStorage.setItem('tps_ps_range', String(psRangeDays)); } catch(e){}
+  renderPerfSnapshot();
+}
+
+function psRestoreRange(){
+  let saved = 0;
+  try { saved = parseInt(localStorage.getItem('tps_ps_range'),10) || 0; } catch(e){}
+  psRangeDays = saved;
+  const grp = document.getElementById('ps-range-grp');
+  if(!grp) return;
+  grp.querySelectorAll('.pill').forEach(p=>{
+    p.classList.toggle('on', (parseInt(p.dataset.days,10)||0) === saved);
+  });
+}
+
+function psAcctSize(){
+  const sel = document.getElementById('acct-size');
+  const custom = document.getElementById('acct-size-custom');
+  return sel?.value === 'custom'
+    ? (parseFloat(custom?.value) || 100000)
+    : parseFloat(sel?.value || '100000');
+}
+
+function renderPerfSnapshot(){
+  const eqCanvas = document.getElementById('dash-eq-chart');
+  const ddCanvas = document.getElementById('dash-dd-chart');
+  if(!eqCanvas || !ddCanvas) return;
+  // Charts size wrong when drawn into a hidden panel, so only draw on the dashboard.
+  const panel = document.getElementById('panel-dashboard');
+  if(!panel || !panel.classList.contains('active')) return;
+
+  // ── Range filter ──
+  let list = (Array.isArray(trades) ? trades : []).filter(t => t && t.date);
+  let rangeText = '· all time';
+  if(psRangeDays > 0){
+    const from = new Date();
+    from.setHours(0,0,0,0);
+    from.setDate(from.getDate() - (psRangeDays - 1));
+    const fromStr = psLocalDateStr(from);
+    list = list.filter(t => t.date >= fromStr);
+    rangeText = '· last ' + psRangeDays + ' days';
+  }
+  list = list.slice().sort((a,b)=>String(a.date).localeCompare(String(b.date)));
+  const rangeLabel = document.getElementById('ps-range-label');
+  if(rangeLabel) rangeLabel.textContent = rangeText;
+
+  const n = list.length;
+  const isBE = r => r === 'Breakeven' || r === 'BE';
+  const winTrades  = list.filter(t => t.result === 'Win');
+  const lossTrades = list.filter(t => t.result === 'Loss');
+  const beTrades   = list.filter(t => isBE(t.result));
+
+  // ── Profit factor (from actual P&L signs, not the result label) ──
+  let grossProfit = 0, grossLoss = 0;
+  list.forEach(t => {
+    const p = Number(t.pnl) || 0;
+    if(p > 0) grossProfit += p; else grossLoss += Math.abs(p);
+  });
+  const pfEl = document.getElementById('d-pf');
+  const pfSub = document.getElementById('d-pf-sub');
+  if(!n){
+    pfEl.textContent = '—'; pfEl.className = 'stat-value';
+    pfSub.textContent = 'gross profit ÷ gross loss';
+  } else if(grossLoss === 0){
+    pfEl.textContent = grossProfit > 0 ? '∞' : '—';
+    pfEl.className = 'stat-value ' + (grossProfit > 0 ? 'green' : '');
+    pfSub.textContent = grossProfit > 0 ? 'no losses yet in this range' : 'gross profit ÷ gross loss';
+  } else {
+    const pf = grossProfit / grossLoss;
+    pfEl.textContent = pf.toFixed(2);
+    pfEl.className = 'stat-value ' + (pf >= 1.5 ? 'green' : pf >= 1 ? '' : 'red');
+    pfSub.textContent = '$' + grossProfit.toFixed(0) + ' won ÷ $' + grossLoss.toFixed(0) + ' lost';
+  }
+
+  // ── Average win vs average loss ──
+  const avgWin  = winTrades.length  ? winTrades.reduce((s,t)=>s+(Number(t.pnl)||0),0) / winTrades.length : 0;
+  const avgLoss = lossTrades.length ? Math.abs(lossTrades.reduce((s,t)=>s+(Number(t.pnl)||0),0) / lossTrades.length) : 0;
+  const rrEl = document.getElementById('d-rr');
+  const rrSub = document.getElementById('d-rr-sub');
+  if(avgLoss > 0 && winTrades.length){
+    const rr = avgWin / avgLoss;
+    rrEl.textContent = rr.toFixed(2);
+    rrEl.className = 'stat-value ' + (rr >= 1 ? 'green' : 'red');
+    rrSub.textContent = '+$' + avgWin.toFixed(0) + ' avg win · -$' + avgLoss.toFixed(0) + ' avg loss';
+  } else if(winTrades.length && !lossTrades.length){
+    rrEl.textContent = '—'; rrEl.className = 'stat-value';
+    rrSub.textContent = '+$' + avgWin.toFixed(0) + ' avg win · no losses yet';
+  } else {
+    rrEl.textContent = '—'; rrEl.className = 'stat-value';
+    rrSub.textContent = n ? 'need at least one win and one loss' : 'log some trades to see this';
+  }
+
+  // ── Day-level results ──
+  const byDay = {};
+  list.forEach(t => { byDay[t.date] = (byDay[t.date] || 0) + (Number(t.pnl) || 0); });
+  const dayKeys = Object.keys(byDay).sort();
+  const greenDays = dayKeys.filter(d => byDay[d] > 0).length;
+  const redDays   = dayKeys.filter(d => byDay[d] < 0).length;
+  const flatDays  = dayKeys.length - greenDays - redDays;
+
+  const dwrEl = document.getElementById('d-dwr');
+  const dwrSub = document.getElementById('d-dwr-sub');
+  if(dayKeys.length){
+    const dwr = Math.round(greenDays / dayKeys.length * 100);
+    dwrEl.textContent = dwr + '%';
+    dwrSub.textContent = greenDays + ' green / ' + redDays + ' red'
+      + (flatDays ? ' / ' + flatDays + ' flat' : '')
+      + ' · ' + dayKeys.length + ' trading day' + (dayKeys.length !== 1 ? 's' : '');
+  } else {
+    dwrEl.textContent = '—';
+    dwrSub.textContent = '0 green / 0 trading days';
+  }
+
+  // ── Win / breakeven / loss split ──
+  document.getElementById('d-wbl').textContent =
+    winTrades.length + ' / ' + beTrades.length + ' / ' + lossTrades.length;
+  const decided = winTrades.length + lossTrades.length;
+  document.getElementById('d-wbl-sub').textContent = n
+    ? n + ' trade' + (n !== 1 ? 's' : '') + (decided ? ' · ' + Math.round(winTrades.length / decided * 100) + '% excluding BE' : '')
+    : '0 trades in range';
+
+  // ── Cumulative P&L and drawdown series (daily) ──
+  const labels = ['Start'], equity = [0];
+  let run = 0;
+  dayKeys.forEach(d => { run += byDay[d]; labels.push(d); equity.push(Number(run.toFixed(2))); });
+
+  let peak = 0;
+  const ddSeries = equity.map(v => { if(v > peak) peak = v; return Number((v - peak).toFixed(2)); });
+  const maxDD = ddSeries.length ? Math.min(...ddSeries) : 0;
+  const worstDay = dayKeys.length ? Math.min(...dayKeys.map(d => byDay[d])) : 0;
+
+  const netTotal = equity.length ? equity[equity.length - 1] : 0;
+  const eqVal = document.getElementById('d-eq-val');
+  eqVal.textContent = (netTotal >= 0 ? '+' : '-') + '$' + Math.abs(netTotal).toFixed(2);
+  eqVal.style.color = netTotal >= 0 ? 'var(--green)' : 'var(--red)';
+  document.getElementById('d-eq-cap').textContent = dayKeys.length
+    ? 'Net ' + (netTotal >= 0 ? '+' : '-') + '$' + Math.abs(netTotal).toFixed(2) + ' across ' + dayKeys.length
+      + ' trading day' + (dayKeys.length !== 1 ? 's' : '') + ' and ' + n + ' trade' + (n !== 1 ? 's' : '') + '.'
+    : 'No trades logged in this range yet.';
+
+  const acctSize = psAcctSize();
+  const dailyLimit = acctSize * 0.05;
+  const overallLimit = acctSize * 0.10;
+  const ddPctOfLimit = overallLimit > 0 ? (Math.abs(maxDD) / overallLimit) * 100 : 0;
+
+  const ddVal = document.getElementById('d-dd-val');
+  ddVal.textContent = maxDD < 0 ? '-$' + Math.abs(maxDD).toFixed(2) : '$0.00';
+  ddVal.style.color = maxDD < 0 ? 'var(--red)' : 'var(--muted)';
+  document.getElementById('d-dd-cap').textContent = dayKeys.length
+    ? 'Worst drawdown used ' + ddPctOfLimit.toFixed(1) + '% of your ' + fmt(overallLimit) + ' max loss. '
+      + 'Worst single day was ' + (worstDay < 0 ? '-$' + Math.abs(worstDay).toFixed(2) : '$0.00')
+      + ' against a ' + fmt(dailyLimit) + ' daily limit.'
+    : 'Drawdown is measured from your highest balance so far, not from your starting balance.';
+
+  // ── Draw ──
+  const gridColor = 'rgba(0,0,0,0.06)';
+  const tickFont = { family: 'DM Mono', size: 9 };
+  const baseScales = (yCb) => ({
+    x: { ticks:{ color:'#6b7280', font:tickFont, maxTicksLimit:6, maxRotation:0, autoSkip:true }, grid:{ display:false } },
+    y: { ticks:{ color:'#6b7280', font:tickFont, callback:yCb }, grid:{ color:gridColor } }
+  });
+  const money = v => (v < 0 ? '-$' : '$') + Math.abs(v).toLocaleString();
+
+  if(charts.dashEq) charts.dashEq.destroy();
+  charts.dashEq = new Chart(eqCanvas.getContext('2d'), {
+    type: 'line',
+    data: { labels, datasets: [{
+      data: equity,
+      borderColor: netTotal >= 0 ? '#16a34a' : '#dc2626',
+      backgroundColor: netTotal >= 0 ? 'rgba(22,163,74,0.08)' : 'rgba(220,38,38,0.07)',
+      fill: true, tension: 0.12, pointRadius: 0, pointHoverRadius: 4, borderWidth: 2
+    }]},
+    options: {
+      responsive: true, maintainAspectRatio: false, animation: false,
+      plugins: { legend:{ display:false }, tooltip:{ callbacks:{ label: c => money(c.parsed.y) } } },
+      scales: baseScales(money)
+    }
+  });
+
+  // Only draw the max-loss line when drawdown is deep enough that the line does not
+  // flatten the chart. Below that it stays in the caption instead.
+  const ddDatasets = [{
+    data: ddSeries,
+    borderColor: '#dc2626',
+    backgroundColor: 'rgba(220,38,38,0.10)',
+    fill: true, tension: 0.12, pointRadius: 0, pointHoverRadius: 4, borderWidth: 2
+  }];
+  if(ddPctOfLimit >= 20 && overallLimit > 0){
+    ddDatasets.push({
+      data: ddSeries.map(() => -overallLimit),
+      borderColor: 'rgba(220,38,38,0.55)', borderDash: [5,4], borderWidth: 1.5,
+      pointRadius: 0, fill: false, tension: 0
+    });
+  }
+  if(charts.dashDd) charts.dashDd.destroy();
+  charts.dashDd = new Chart(ddCanvas.getContext('2d'), {
+    type: 'line',
+    data: { labels, datasets: ddDatasets },
+    options: {
+      responsive: true, maintainAspectRatio: false, animation: false,
+      plugins: {
+        legend: { display:false },
+        tooltip: { filter: c => c.datasetIndex === 0, callbacks:{ label: c => money(c.parsed.y) } }
+      },
+      scales: baseScales(money)
+    }
+  });
 }
 
 function setRule(key,val,max,subs){
