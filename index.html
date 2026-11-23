@@ -91,6 +91,21 @@ html,body{background:var(--bg);color:var(--text);font-family:var(--font);min-hei
 .nav-toggle.open span::before{top:0;transform:rotate(45deg);}
 .nav-toggle.open span::after{top:0;transform:rotate(-45deg);}
 .nav-backdrop{display:none;position:fixed;inset:0;background:rgba(0,0,0,0.42);z-index:190;}
+/* Local-only warning: deliberately impossible to miss */
+.offline-banner{display:none;position:fixed;top:0;left:0;right:0;z-index:240;align-items:center;gap:10px;
+  padding:10px 16px;background:var(--amber-dim,#fff7ed);border-bottom:1px solid var(--amber,#d97706);
+  color:#7c2d12;font-size:12px;font-family:var(--mono);line-height:1.5;}
+.offline-banner-dot{width:8px;height:8px;border-radius:50%;background:var(--amber,#d97706);flex:none;}
+.offline-banner-btn{margin-left:auto;flex:none;background:var(--amber,#d97706);color:#fff;border:0;
+  border-radius:6px;padding:5px 11px;font-size:11px;font-family:var(--mono);font-weight:600;cursor:pointer;}
+/* Push the whole shell down so the bar never sits on top of the content.
+   The height is measured at runtime because the text wraps on a phone. */
+body.has-banner{--banner-h:42px;}
+body.has-banner .app{padding-top:var(--banner-h);}
+body.has-banner .sidebar{height:calc(100vh - var(--banner-h));top:var(--banner-h);}
+body.has-banner .nav-toggle{top:calc(var(--banner-h) + 12px);}
+body.has-banner .auth-gate{top:var(--banner-h);}
+@media(max-width:820px){.offline-banner{font-size:11px;padding:9px 12px;}}
 .nav-backdrop.show{display:block;}
 @media(max-width:820px){
   .nav-toggle{display:flex;}
@@ -439,6 +454,12 @@ window.TPS_SUPABASE = {
     <div id="auth-syncing" style="display:none;text-align:center;margin-top:16px;font-size:12px;color:var(--accent);font-family:var(--mono);">Syncing your journal...</div>
   </div>
 </div>
+<div class="offline-banner" id="offline-banner">
+  <span class="offline-banner-dot"></span>
+  <span id="offline-banner-text"></span>
+  <button class="offline-banner-btn" onclick="tpsRetryCloud()">Try again</button>
+</div>
+
 <button class="nav-toggle" id="nav-toggle" onclick="toggleNav()" aria-label="Menu" aria-expanded="false"><span></span></button>
 <div class="nav-backdrop" id="nav-backdrop" onclick="closeNav()"></div>
 
@@ -508,6 +529,7 @@ window.TPS_SUPABASE = {
         <div style="min-width:0;">
           <div id="account-name" style="font-size:11px;font-weight:600;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;"></div>
           <div id="account-sync-state" style="font-size:9px;color:var(--accent);font-family:var(--mono);letter-spacing:0.04em;">Synced</div>
+          <div id="account-sync-when" style="font-size:9px;color:var(--faint);font-family:var(--mono);letter-spacing:0.02em;"></div>
         </div>
         <button onclick="authSignOut()" title="Sign out of this device" style="background:none;border:1px solid var(--border2);border-radius:6px;padding:4px 8px;font-size:10px;font-weight:600;color:var(--muted);cursor:pointer;font-family:var(--font);flex-shrink:0;">Sign out</button>
       </div>
@@ -4404,11 +4426,34 @@ function resetFullJournal(){
     return JSON.stringify(out);
   }
 
+  const SYNCED_AT = '_tps_synced_at';
+  function markSynced(){ try{ localStorage.setItem(SYNCED_AT, new Date().toISOString()); }catch(e){} }
+  function sinceSynced(){
+    const t = Date.parse(localStorage.getItem(SYNCED_AT)||'');
+    if(isNaN(t)) return '';
+    const mins = Math.floor((Date.now()-t)/60000);
+    if(mins < 1) return 'just now';
+    if(mins === 1) return '1 min ago';
+    if(mins < 60) return mins+' mins ago';
+    const hrs = Math.floor(mins/60);
+    if(hrs === 1) return '1 hour ago';
+    if(hrs < 24) return hrs+' hours ago';
+    const days = Math.floor(hrs/24);
+    return days === 1 ? 'yesterday' : days+' days ago';
+  }
   function syncState(text, tone){
     const el = $('account-sync-state'); if(!el) return;
     el.textContent = text;
     el.style.color = tone==='warn' ? 'var(--amber)' : tone==='err' ? 'var(--red)' : 'var(--accent)';
+    // Saying when it last reached the cloud turns "is this working?" into
+    // something a student can answer by looking.
+    const sub = $('account-sync-when');
+    if(sub){
+      const when = sinceSynced();
+      sub.textContent = (text === 'Synced' && when) ? 'cloud updated ' + when : '';
+    }
   }
+  setInterval(()=>{ const el=$('account-sync-state'); if(el && el.textContent==='Synced') syncState('Synced'); }, 60000);
   function showErr(msg){ const e=$('auth-error'); if(e){ e.textContent=msg; e.style.display='block'; } const n=$('auth-notice'); if(n) n.style.display='none'; }
   function showNotice(msg){ const n=$('auth-notice'); if(n){ n.textContent=msg; n.style.display='block'; } const e=$('auth-error'); if(e) e.style.display='none'; }
 
@@ -4524,6 +4569,7 @@ function resetFullJournal(){
         const bb = base(); delete bb[k]; setBase(bb);
       }
       setQueue([]);
+      markSynced();
       syncState('Synced');
     }catch(e){
       syncState('Offline · will retry','warn');
@@ -4539,6 +4585,7 @@ function resetFullJournal(){
     if(error) throw error;
     const remote = {}; (data||[]).forEach(r=>remote[r.key]=r);
     Object.values(remote).forEach(r=>noteBase(r.key, r.updated_at));
+    markSynced();
 
     const deviceOwner = localStorage.getItem(USER_KEY);
     const foreignDevice = deviceOwner && deviceOwner !== session.user.id;
@@ -4772,10 +4819,63 @@ function resetFullJournal(){
     location.reload();
   };
 
+  // The cloud library comes from a CDN. On a phone with a blocked or flaky
+  // connection that script can fail, and the journal would then run local only
+  // with no sign that nothing was syncing. Try a second source before giving up.
+  const SB_FALLBACKS = [
+    'https://unpkg.com/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js',
+    'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js'
+  ];
+  function loadScript(src){
+    return new Promise((resolve,reject)=>{
+      const s=document.createElement('script');
+      s.src=src; s.async=true;
+      s.onload=()=>resolve();
+      s.onerror=()=>reject(new Error('failed '+src));
+      document.head.appendChild(s);
+    });
+  }
+  async function ensureLibrary(){
+    if(window.supabase) return true;
+    for(const src of SB_FALLBACKS){
+      try{
+        await loadScript(src);
+        if(window.supabase){ console.warn('[sync] loaded the cloud library from a fallback source'); return true; }
+      }catch(e){ /* try the next one */ }
+    }
+    return !!window.supabase;
+  }
+
+  // Local only is a real state with real consequences, so say so plainly
+  // rather than looking identical to a working journal.
+  function showLocalOnlyBanner(reason){
+    const bar = $('offline-banner');
+    if(!bar) return;
+    $('offline-banner-text').textContent = reason;
+    bar.style.display = 'flex';
+    document.body.classList.add('has-banner');
+    const measure = ()=>{
+      const h = bar.offsetHeight || 42;
+      document.body.style.setProperty('--banner-h', h + 'px');
+    };
+    measure();
+    window.addEventListener('resize', measure);
+    setTimeout(measure, 120);   // after fonts settle
+  }
+  window.tpsRetryCloud = async function(){
+    $('offline-banner-text').textContent = 'Reconnecting...';
+    if(await ensureLibrary()){ location.reload(); return; }
+    $('offline-banner-text').textContent = 'Still cannot reach the cloud. Your trades are saving on this device only.';
+  };
+
   // ── Boot ──
   async function boot(){
-    if(!configured) return;           // local-only mode: nothing changes
-    if(!window.supabase){ console.warn('Supabase library failed to load — running local-only.'); return; }
+    if(!configured) return;           // cloud sync not set up for this build
+    if(!await ensureLibrary()){
+      console.warn('Supabase library failed to load — running local-only.');
+      showLocalOnlyBanner('Cloud sync could not start, so your trades are saving on this device only and will not appear on your other devices.');
+      return;
+    }
     sb = window.supabase.createClient(cfg.url, cfg.anonKey);
     patchStorage();
     try{
@@ -4804,8 +4904,32 @@ if ('serviceWorker' in navigator) {
   window.addEventListener('load', function () {
     var ok = location.protocol === 'https:' || location.hostname === 'localhost' || location.hostname === '127.0.0.1';
     if (ok) {
-      navigator.serviceWorker.register('sw.js').catch(function (e) {
+      navigator.serviceWorker.register('sw.js').then(function (reg) {
+        // An installed app that is never fully closed keeps running whatever
+        // code it started with, so it can sit on an old version for days.
+        // Check for a new one while running and pick it up.
+        function checkForUpdate(){
+          if (document.hidden) return;
+          reg.update().catch(function(){});
+        }
+        setInterval(checkForUpdate, 15 * 60 * 1000);
+        window.addEventListener('focus', checkForUpdate);
+        document.addEventListener('visibilitychange', checkForUpdate);
+      }).catch(function (e) {
         console.warn('Service worker registration failed:', e);
+      });
+
+      // A new worker taking control means the files on the server changed.
+      // Reload once so the running app is the new version, never mid entry.
+      var reloading = false;
+      navigator.serviceWorker.addEventListener('controllerchange', function () {
+        if (reloading) return;
+        var el = document.activeElement;
+        var tag = el ? (el.tagName || '').toLowerCase() : '';
+        var typing = tag === 'input' || tag === 'textarea' || tag === 'select' || (el && el.isContentEditable);
+        if (typing) return;                       // wait for the next chance
+        reloading = true;
+        location.reload();
       });
     }
   });

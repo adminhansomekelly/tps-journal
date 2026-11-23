@@ -1,6 +1,6 @@
 /* TPS Journal service worker
    Bump CACHE_VERSION whenever you upload a new index.html so users get the update. */
-const CACHE_VERSION = 'tps-journal-v9';
+const CACHE_VERSION = 'tps-journal-v10';
 
 // App shell precached on install. Relative paths resolve to this folder.
 const SHELL = [
@@ -51,12 +51,32 @@ self.addEventListener('fetch', event => {
     return;
   }
 
-  // Everything else (local assets + CDN fonts/Chart.js): cache first, then network, then cache it.
+  const sameOrigin = new URL(req.url).origin === self.location.origin;
+
+  // Cross-origin scripts (Supabase, Chart.js, fonts): network first, so a copy
+  // cached from a failed or truncated load heals itself on the next visit
+  // instead of leaving the app without its cloud sync library.
+  if (!sameOrigin) {
+    event.respondWith(
+      fetch(req).then(res => {
+        // An opaque response cannot be inspected, so a 404 looks like a 200.
+        // Only store responses we can actually verify.
+        if (res && res.ok && res.type !== 'opaque') {
+          const copy = res.clone();
+          caches.open(CACHE_VERSION).then(c => c.put(req, copy));
+        }
+        return res;
+      }).catch(() => caches.match(req))
+    );
+    return;
+  }
+
+  // Local assets: cache first, then network, then cache it.
   event.respondWith(
     caches.match(req).then(cached => {
       if (cached) return cached;
       return fetch(req).then(res => {
-        if (res && (res.status === 200 || res.type === 'opaque')) {
+        if (res && res.status === 200) {
           const copy = res.clone();
           caches.open(CACHE_VERSION).then(c => c.put(req, copy));
         }
