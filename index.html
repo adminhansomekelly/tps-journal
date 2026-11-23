@@ -2744,6 +2744,22 @@ function setPhase(phase){
   updateDash();
 }
 
+// Re-apply data that arrived from another device, without reloading the page.
+// Reloading mid session would throw away anything half typed, so the sync
+// layer calls this instead and only when no field has focus.
+window.tpsSoftRefresh = function(){
+  try{
+    const active = document.querySelector('.panel.active');
+    const panelId = active ? active.id.replace('panel-','') : 'dashboard';
+    setPhase(localStorage.getItem('tps_active_phase') || activePhase || 'p1');
+    nav(panelId);
+    return true;
+  }catch(e){
+    console.warn('[sync] soft refresh failed', e);
+    return false;
+  }
+};
+
 // Restore last active phase on load
 document.addEventListener('DOMContentLoaded', ()=>{
   const saved = localStorage.getItem('tps_active_phase') || 'p1';
@@ -4223,8 +4239,17 @@ function resetFullJournal(){
   const USER_KEY  = '_tps_sync_user';   // user id this device's data belongs to
   const QUEUE_KEY = '_tps_sync_queue';  // keys awaiting push (survives reload)
   const RELOAD_FLAG = '_tps_sync_reloaded';
+  const BASE_KEY  = '_tps_sync_base';   // { tpsKey: remote updated_at last synced }
 
   let sb = null, session = null, signupMode = false, pushTimer = null, flushing = false;
+  let pulling = false, pullTimer = null;
+
+  const PULL_MS = 20000;   // background pull cadence
+
+  // Keys whose value is an array of objects carrying a unique id. When two
+  // devices edit one of these without seeing each other, the records are
+  // combined rather than one device's copy replacing the other's.
+  const MERGEABLE = /^tps_(trades|payouts|debriefs|bt_trades)/;
 
   const $ = id => document.getElementById(id);
   const meta  = () => { try { return JSON.parse(localStorage.getItem(META_KEY)||'{}'); } catch(e){ return {}; } };
@@ -4232,6 +4257,44 @@ function resetFullJournal(){
   const queue = () => { try { return JSON.parse(localStorage.getItem(QUEUE_KEY)||'[]'); } catch(e){ return []; } };
   const setQueue = q => localStorage.setItem(QUEUE_KEY, JSON.stringify([...new Set(q)]));
   const tpsKeys = () => { const out=[]; for(let i=0;i<localStorage.length;i++){ const k=localStorage.key(i); if(k&&k.indexOf('tps_')===0) out.push(k); } return out; };
+  const base  = () => { try { return JSON.parse(localStorage.getItem(BASE_KEY)||'{}'); } catch(e){ return {}; } };
+  const setBase = b => localStorage.setItem(BASE_KEY, JSON.stringify(b));
+  function noteBase(k, stamp){ const b=base(); b[k]=stamp; setBase(b); }
+
+  // Never redraw the page out from under someone who is mid entry, reading a
+  // trade in the modal, or part way through the mobile menu.
+  function isBusyEditing(){
+    const el = document.activeElement;
+    if(el){
+      const tag = (el.tagName||'').toLowerCase();
+      if(tag==='input' || tag==='textarea' || tag==='select' || el.isContentEditable === true) return true;
+    }
+    const modal = $('modal');
+    if(modal && modal.style.display !== 'none' && modal.style.display !== '') return true;
+    const sb2 = $('sidebar');
+    if(sb2 && sb2.classList.contains('open')) return true;
+    return false;
+  }
+
+  // Combine two versions of a record list by id. Returns null when the shape
+  // is not what we expect, and the caller then falls back to last write wins.
+  function unionById(localStr, remoteStr){
+    let a, b;
+    try { a = JSON.parse(localStr); b = JSON.parse(remoteStr); } catch(e){ return null; }
+    if(!Array.isArray(a) || !Array.isArray(b)) return null;
+    const ok = x => x && typeof x === 'object' && x.id !== undefined && x.id !== null;
+    if(!a.every(ok) || !b.every(ok)) return null;
+    const byId = new Map();
+    b.forEach(x => byId.set(String(x.id), x));
+    a.forEach(x => byId.set(String(x.id), x));   // this device wins on the same record
+    const out = [...byId.values()];
+    out.sort((x,y)=>{
+      const dx = String(x.date||'')+' '+String(x.time||''), dy = String(y.date||'')+' '+String(y.time||'');
+      if(dx !== dy) return dx < dy ? -1 : 1;
+      return String(x.id) < String(y.id) ? -1 : 1;
+    });
+    return JSON.stringify(out);
+  }
 
   function syncState(text, tone){
     const el = $('account-sync-state'); if(!el) return;
@@ -4295,6 +4358,34 @@ function resetFullJournal(){
     flushing = true;
     try{
       const m = meta();
+
+      // Before overwriting anything, find out whether another device changed
+      // these keys since we last synced them. Pushing blind would delete that
+      // device's work with no warning.
+      let remoteNow = {};
+      try{
+        const { data: cur } = await sb.from('journal_data')
+          .select('key,value,updated_at').eq('user_id', session.user.id).in('key', q);
+        (cur||[]).forEach(r => remoteNow[r.key] = r);
+      }catch(e){ remoteNow = {}; }
+
+      const b = base();
+      let mergedAny = false;
+      q.forEach(k=>{
+        const r = remoteNow[k];
+        if(!r || !b[k] || r.updated_at === b[k]) return;   // nobody else touched it
+        const localVal = localStorage.getItem(k);
+        if(localVal === null || localVal === r.value) return;
+        if(!MERGEABLE.test(k)) return;                      // settings: last write wins
+        const merged = unionById(localVal, r.value);
+        if(merged && merged !== localVal){
+          window.__tpsInitWrite = true;                     // write without re-queuing
+          localStorage.setItem(k, merged);
+          window.__tpsInitWrite = false;
+          mergedAny = true;
+        }
+      });
+
       const ups=[], dels=[];
       q.forEach(k=>{
         const v = localStorage.getItem(k);
@@ -4304,10 +4395,13 @@ function resetFullJournal(){
       if(ups.length){
         const { error } = await sb.from('journal_data').upsert(ups, { onConflict:'user_id,key' });
         if(error) throw error;
+        ups.forEach(u => noteBase(u.key, u.updated_at));
       }
+      if(mergedAny && !isBusyEditing() && window.tpsSoftRefresh) window.tpsSoftRefresh();
       for(const k of dels){
         const { error } = await sb.from('journal_data').delete().eq('user_id', session.user.id).eq('key', k);
         if(error) throw error;
+        const bb = base(); delete bb[k]; setBase(bb);
       }
       setQueue([]);
       syncState('Synced');
@@ -4319,11 +4413,12 @@ function resetFullJournal(){
   }
 
   // ── Pull on login: per-key last-write-wins, with first-device migration ──
-  async function pullAndMerge(){
+  async function pullAndMerge(background){
     const { data, error } = await sb.from('journal_data')
       .select('key,value,updated_at').eq('user_id', session.user.id);
     if(error) throw error;
     const remote = {}; (data||[]).forEach(r=>remote[r.key]=r);
+    Object.values(remote).forEach(r=>noteBase(r.key, r.updated_at));
 
     const deviceOwner = localStorage.getItem(USER_KEY);
     const foreignDevice = deviceOwner && deviceOwner !== session.user.id;
@@ -4386,6 +4481,13 @@ function resetFullJournal(){
     // From here on, every tps_ write is a real user edit — start stamping.
     window.__tpsSyncReady = true;
 
+    if(changedLocal && background){
+      // Arrived from another device mid session: redraw in place and say so.
+      if(window.tpsSoftRefresh) window.tpsSoftRefresh();
+      syncState('Updated from another device');
+      setTimeout(()=>{ if(!queue().length) syncState('Synced'); }, 3000);
+      return true;
+    }
     if(changedLocal && !sessionStorage.getItem(RELOAD_FLAG)){
       sessionStorage.setItem(RELOAD_FLAG,'1');
       location.reload();
@@ -4393,6 +4495,19 @@ function resetFullJournal(){
     }
     sessionStorage.removeItem(RELOAD_FLAG);
     return true;
+  }
+
+  // ── Keep pulling after sign in, not only at it ──
+  // Without this the app learns about another device's trades only on reload,
+  // which is what made phone entries never appear on an already open laptop.
+  async function backgroundPull(){
+    if(!session || pulling || flushing) return;
+    if(document.hidden || isBusyEditing()) return;
+    if(queue().length) return;           // our own changes go up first
+    pulling = true;
+    try{ await pullAndMerge(true); }
+    catch(e){ /* offline: the next tick retries */ }
+    finally{ pulling = false; }
   }
 
   async function onSignedIn(){
@@ -4415,6 +4530,15 @@ function resetFullJournal(){
     window.addEventListener('online', flushQueue);
     setInterval(flushQueue, 30000);
     window.addEventListener('beforeunload', ()=>{ if(queue().length) flushQueue(); });
+
+    // Pull as well as push. Coming back to the tab is the moment a student is
+    // most likely to be looking at stale data, so that is the first trigger.
+    if(!pullTimer){
+      window.addEventListener('focus', backgroundPull);
+      window.addEventListener('online', backgroundPull);
+      document.addEventListener('visibilitychange', ()=>{ if(!document.hidden) backgroundPull(); });
+      pullTimer = setInterval(backgroundPull, PULL_MS);
+    }
   }
 
   // ── Auth UI actions (exposed globally for the gate's buttons) ──
