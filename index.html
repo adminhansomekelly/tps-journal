@@ -583,9 +583,12 @@ window.TPS_SUPABASE = {
       <label>Starting balance</label>
       <div class="balance-input-field">
         <span class="balance-dollar muted">$</span>
-        <input type="number" id="start-bal-input" placeholder="100000" oninput="updateDash()" class="muted-input">
+        <input type="number" id="start-bal-input" placeholder="Set below" oninput="markStartBalEdited();updateDash()" class="muted-input">
       </div>
     </div>
+  </div>
+  <div id="start-bal-hint" style="display:none;font-size:11px;color:var(--amber);font-family:var(--mono);line-height:1.6;margin:-4px 0 10px;">
+    Set your starting balance to see your current balance and your profit percentage. Pick your account size under Challenge and funded account tracker below and it fills in automatically, or type it here if you are part way through an account.
   </div>
 
   <div class="g4" style="margin-bottom:14px;">
@@ -2332,14 +2335,26 @@ function findTradeAnyPhase(id){
   return null;
 }
 
+// Once the trader types their own starting balance it stops following the
+// account size, so a funded account mid-run or after a payout keeps its figure.
+function markStartBalEdited(){
+  const k = phaseSettingsKey();
+  const s = JSON.parse(localStorage.getItem(k)||'{}');
+  if(!s.startBalSet){ s.startBalSet = true; localStorage.setItem(k, JSON.stringify(s)); }
+}
+
 function saveSetting(){
-  localStorage.setItem(phaseSettingsKey(),JSON.stringify({
+  const k = phaseSettingsKey();
+  const prev = JSON.parse(localStorage.getItem(k)||'{}');
+  const obj = {
     startBal:document.getElementById('start-bal-input').value,
     maxRisk:document.getElementById('max-risk-input').value,
     maxTrades:document.getElementById('max-trades-input')?.value||'5',
     lossMode:document.getElementById('loss-mode-input')?.value||'count',
     lossLimit:document.getElementById('loss-limit-input')?.value||'3'
-  }));
+  };
+  if(prev.startBalSet) obj.startBalSet = true;
+  localStorage.setItem(k, JSON.stringify(obj));
 }
 
 // ═══════════════════════════════════════
@@ -2387,6 +2402,10 @@ function updateDash(){
   } else if(balInput && startBal === 0) {
     balInput.value = '';
   }
+  // A blank current balance with no explanation reads as a broken journal.
+  // Say what is missing and where to fix it.
+  const sbHint = document.getElementById('start-bal-hint');
+  if(sbHint) sbHint.style.display = startBal > 0 ? 'none' : 'block';
 
   // Stat cards
   const pnlEl=document.getElementById('d-pnl');
@@ -3548,6 +3567,23 @@ function applyAcctSize(){
   const p2Target = acct * (p2Pct/100);
   const dailyLoss = acct * 0.05;
   const maxLoss = acct * 0.10;
+
+  // A $50,000 challenge account starts at $50,000. Students pick their size
+  // here and reasonably expect that to be their starting balance, so the
+  // balance follows the account size until they type their own figure.
+  // Without this the balance stays blank, current balance shows a dash and
+  // the percentage stays at zero, which reads as "my balance will not save".
+  const sbInput = document.getElementById('start-bal-input');
+  if(acct && sbInput){
+    const prevS = JSON.parse(localStorage.getItem(phaseSettingsKey())||'{}');
+    if(!prevS.startBalSet && String(sbInput.value) !== String(acct)){
+      sbInput.value = acct;
+      if(typeof saveSetting === 'function') saveSetting();
+      // Refresh the cards so current balance and the percentage appear now,
+      // rather than staying blank until the next thing redraws them.
+      if(typeof updateDash === 'function') setTimeout(updateDash, 0);
+    }
+  }
 
   if(acct) {
     // Update summary
