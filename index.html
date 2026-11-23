@@ -1829,6 +1829,54 @@ function tpsPrettyDay(ds){
   return new Date(p[0], p[1]-1, p[2]).toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric'});
 }
 
+// ═══════════════════════════════════════
+// DELETION RECORDS (tombstones)
+// Trades sync by combining both devices' records, so a plain delete would be
+// undone the moment a device that still holds the record syncs. Recording the
+// deletion keeps it deleted. Works signed out too, so the deletion is still
+// respected the first time that device signs in.
+// ═══════════════════════════════════════
+const TPS_TOMB_KEY = 'tps_tombstones';
+
+function tpsReadTombstones(){
+  try { const v = JSON.parse(localStorage.getItem(TPS_TOMB_KEY) || '{}'); return (v && typeof v === 'object' && !Array.isArray(v)) ? v : {}; }
+  catch(e){ return {}; }
+}
+
+// storageKey: the localStorage key the records live under. ids: one or many.
+function tpsTombstone(storageKey, ids){
+  try{
+    const list = Array.isArray(ids) ? ids : [ids];
+    if(!storageKey || !list.length) return;
+    const all = tpsReadTombstones();
+    const forKey = all[storageKey] || {};
+    const now = new Date().toISOString();
+    let added = 0;
+    list.forEach(id => { if(id !== undefined && id !== null){ forKey[String(id)] = now; added++; } });
+    if(!added) return;                      // nothing to record, nothing to sync
+    all[storageKey] = forKey;
+    localStorage.setItem(TPS_TOMB_KEY, JSON.stringify(all));
+  }catch(e){ console.warn('[tombstone]', e); }
+}
+
+// Every id currently recorded as deleted under a key. Deletions from before
+// the last backup restore are ignored, since a restore is the user declaring
+// that snapshot to be the truth.
+function tpsDeletedIds(storageKey){
+  const forKey = tpsReadTombstones()[storageKey];
+  if(!forKey) return new Set();
+  let restored = Date.parse(localStorage.getItem('tps_restore_at') || '');
+  if(!isNaN(restored)) restored = Math.min(restored, Date.now());   // ignore clock skew
+  const out = new Set();
+  Object.keys(forKey).forEach(id=>{
+    const t = Date.parse(forKey[id]);
+    if(isNaN(t)) return;
+    if(!isNaN(restored) && t < restored) return;
+    out.add(id);
+  });
+  return out;
+}
+
 function phaseTradesKey(phase){ return 'tps_trades_' + (phase || activePhase); }
 function phaseSettingsKey(phase){ return 'tps_settings_' + (phase || activePhase); }
 
@@ -2133,6 +2181,7 @@ function saveTrade(){
     // Update existing trade, moving it between phases if the phase was changed
     const oldPhase = editingTradePhase || targetPhase;
     if(oldPhase!==targetPhase){
+      tpsTombstone('tps_trades_'+oldPhase, editingTradeId);
       const oldArr=JSON.parse(localStorage.getItem('tps_trades_'+oldPhase)||'[]').filter(x=>x.id!==editingTradeId);
       localStorage.setItem('tps_trades_'+oldPhase,JSON.stringify(oldArr));
       const newArr=JSON.parse(localStorage.getItem('tps_trades_'+targetPhase)||'[]');
@@ -2844,6 +2893,7 @@ function delTrade(id){
   const f=findTradeAnyPhase(id);
   const ph=f?f.phase:activePhase;
   const arr=JSON.parse(localStorage.getItem('tps_trades_'+ph)||'[]').filter(t=>t.id!==id);
+  tpsTombstone('tps_trades_'+ph, id);
   localStorage.setItem('tps_trades_'+ph,JSON.stringify(arr));
   trades=JSON.parse(localStorage.getItem(phaseTradesKey())||'[]');
   closeModal();renderHistory();updateDash();
@@ -3235,6 +3285,7 @@ function closeDebriefModal(){ document.getElementById('debrief-modal').style.dis
 function deleteDebrief(id){
   if(!confirm('Delete this debrief? This cannot be undone.')) return;
   debriefsStore = debriefsStore.filter(d=>d.id!==id);
+  tpsTombstone('tps_debriefs', id);
   localStorage.setItem('tps_debriefs', JSON.stringify(debriefsStore));
   closeDebriefModal();
   renderDebriefHistory();
@@ -3671,6 +3722,10 @@ function importBackup(ev){
     for(let i=0;i<localStorage.length;i++){ const k=localStorage.key(i); if(k && k.indexOf('tps_')===0) toRemove.push(k); }
     toRemove.forEach(k=>localStorage.removeItem(k));
     tpsKeys.forEach(k=>{ localStorage.setItem(k, typeof data[k]==='string' ? data[k] : JSON.stringify(data[k])); });
+    // A restore is the user saying this snapshot is the truth. Deletions made
+    // before now are dropped, so a trade deleted by accident really does come
+    // back instead of being removed again by another device's deletion record.
+    localStorage.setItem('tps_restore_at', new Date().toISOString());
     alert('Backup restored. The journal will now reload.');
     location.reload();
   };
@@ -3938,12 +3993,14 @@ function renderTpsBtStats(){
 function delTpsBtTrade(id){
   if(!confirm('Remove this backtest trade?')) return;
   tpsBtTrades=tpsBtTrades.filter(t=>t.id!==id);
+  tpsTombstone('tps_bt_trades', id);
   localStorage.setItem('tps_bt_trades',JSON.stringify(tpsBtTrades));
   renderTpsBtHistory();renderTpsBtStats();renderTpsBtAnalysis();
 }
 
 function clearTpsBtHistory(){
   if(!confirm('Clear all backtest trades? This cannot be undone.')) return;
+  tpsTombstone('tps_bt_trades', tpsBtTrades.map(t=>t.id));
   tpsBtTrades=[];
   localStorage.setItem('tps_bt_trades',JSON.stringify(tpsBtTrades));
   renderTpsBtHistory();renderTpsBtStats();renderTpsBtAnalysis();
@@ -4168,6 +4225,7 @@ function recordPayout(){
 function delPayout(id){
   if(!confirm('Delete this payout record? Your balance will go back up by the withdrawn amount.')) return;
   const list=getPayouts().filter(p=>p.id!==id);
+  tpsTombstone('tps_payouts', id);
   localStorage.setItem('tps_payouts', JSON.stringify(list));
   renderPayouts();
   updateDash();
@@ -4203,8 +4261,12 @@ function resetPhaseData(){
   const labels={p1:'Phase 1',p2:'Phase 2',funded:'Funded'};
   const name=labels[activePhase]||activePhase;
   if(!confirm('Reset '+name+'?\n\nThis clears ALL trades and payouts for '+name+' so you can start a new account here. Your settings, trading plan, debriefs, and the other phases are untouched.\n\nTip: tap Export backup (bottom left) first if you want to keep a copy.\n\nContinue?')) return;
-  localStorage.setItem(phaseTradesKey(activePhase), '[]');
+  const tk=phaseTradesKey(activePhase);
+  try{ tpsTombstone(tk, (JSON.parse(localStorage.getItem(tk)||'[]')||[]).map(t=>t.id)); }catch(e){}
+  localStorage.setItem(tk, '[]');
+  const gone=getPayouts().filter(p=>p.phase===activePhase).map(p=>p.id);
   const rest=getPayouts().filter(p=>p.phase!==activePhase);
+  tpsTombstone('tps_payouts', gone);
   localStorage.setItem('tps_payouts', JSON.stringify(rest));
   trades=[];
   renderPayouts();
@@ -4215,7 +4277,10 @@ function resetPhaseData(){
 function resetFullJournal(){
   if(!confirm('Reset the ENTIRE journal?\n\nThis clears trades in all three phases, all payouts, all daily debriefs, and all backtest logs. Your trading plan, mantras, confluences, and phase settings are kept.\n\nTip: tap Export backup (bottom left) first if you want to keep a copy.\n\nContinue?')) return;
   if(!confirm('Last check — this cannot be undone except by restoring a backup file.\n\nReset everything now?')) return;
-  ['tps_trades_p1','tps_trades_p2','tps_trades_funded','tps_debriefs','tps_bt_trades','tps_payouts'].forEach(k=>localStorage.setItem(k,'[]'));
+  ['tps_trades_p1','tps_trades_p2','tps_trades_funded','tps_debriefs','tps_bt_trades','tps_payouts'].forEach(k=>{
+    try{ tpsTombstone(k, (JSON.parse(localStorage.getItem(k)||'[]')||[]).map(r=>r.id)); }catch(e){}
+    localStorage.setItem(k,'[]');
+  });
   trades=[];
   location.reload();
 }
@@ -4250,6 +4315,8 @@ function resetFullJournal(){
   // devices edit one of these without seeing each other, the records are
   // combined rather than one device's copy replacing the other's.
   const MERGEABLE = /^tps_(trades|payouts|debriefs|bt_trades)/;
+  const TOMB_KEY  = 'tps_tombstones';   // syncs like any other tps_ key
+  const TOMB_TTL  = 180*24*60*60*1000;  // forget a deletion after 180 days
 
   const $ = id => document.getElementById(id);
   const meta  = () => { try { return JSON.parse(localStorage.getItem(META_KEY)||'{}'); } catch(e){ return {}; } };
@@ -4274,6 +4341,47 @@ function resetFullJournal(){
     const sb2 = $('sidebar');
     if(sb2 && sb2.classList.contains('open')) return true;
     return false;
+  }
+
+  // Deletion records merge as a union: two devices deleting different trades
+  // must both have their deletions respected, so last write wins is wrong here.
+  function mergeTombstones(localStr, remoteStr){
+    const parse = str => { try { const v = JSON.parse(str||'{}'); return (v && typeof v==='object' && !Array.isArray(v)) ? v : {}; } catch(e){ return {}; } };
+    const a = parse(localStr), b = parse(remoteStr), out = {};
+    let cutoff = Date.now() - TOMB_TTL;
+    let restored = Date.parse(localStorage.getItem('tps_restore_at')||'');
+    if(!isNaN(restored)){
+      restored = Math.min(restored, Date.now());                    // ignore clock skew
+      if(restored > cutoff) cutoff = restored;
+    }
+    [a,b].forEach(src=>{
+      Object.keys(src).forEach(storageKey=>{
+        const recs = src[storageKey];
+        if(!recs || typeof recs !== 'object') return;
+        Object.keys(recs).forEach(id=>{
+          const when = recs[id];
+          const t = Date.parse(when);
+          if(isNaN(t) || t < cutoff) return;              // prune old deletions
+          if(!out[storageKey]) out[storageKey] = {};
+          const have = out[storageKey][id];
+          if(!have || Date.parse(have) < t) out[storageKey][id] = when;
+        });
+      });
+    });
+    Object.keys(out).forEach(k=>{ if(!Object.keys(out[k]).length) delete out[k]; });
+    return JSON.stringify(out);
+  }
+
+  // Drop records that have been deleted. Applied after every union, so a
+  // device still holding a deleted trade cannot bring it back.
+  function applyTombstones(arrStr, storageKey){
+    if(!arrStr) return arrStr;
+    let arr; try { arr = JSON.parse(arrStr); } catch(e){ return arrStr; }
+    if(!Array.isArray(arr)) return arrStr;
+    const dead = tpsDeletedIds(storageKey);
+    if(!dead.size) return arrStr;
+    const kept = arr.filter(x => !(x && x.id !== undefined && dead.has(String(x.id))));
+    return kept.length === arr.length ? arrStr : JSON.stringify(kept);
   }
 
   // Combine two versions of a record list by id. Returns null when the shape
@@ -4371,13 +4479,25 @@ function resetFullJournal(){
 
       const b = base();
       let mergedAny = false;
-      q.forEach(k=>{
+      // Deletion records first: the record lists are filtered against them.
+      const ordered = [...q].sort((x,y)=> (x===TOMB_KEY?-1:0) - (y===TOMB_KEY?-1:0));
+      ordered.forEach(k=>{
         const r = remoteNow[k];
         if(!r || !b[k] || r.updated_at === b[k]) return;   // nobody else touched it
         const localVal = localStorage.getItem(k);
         if(localVal === null || localVal === r.value) return;
+        if(k === TOMB_KEY){
+          const tomb = mergeTombstones(localVal, r.value);
+          if(tomb !== localVal){
+            window.__tpsInitWrite = true;
+            localStorage.setItem(k, tomb);
+            window.__tpsInitWrite = false;
+            mergedAny = true;
+          }
+          return;
+        }
         if(!MERGEABLE.test(k)) return;                      // settings: last write wins
-        const merged = unionById(localVal, r.value);
+        const merged = applyTombstones(unionById(localVal, r.value), k);
         if(merged && merged !== localVal){
           window.__tpsInitWrite = true;                     // write without re-queuing
           localStorage.setItem(k, merged);
@@ -4451,10 +4571,58 @@ function resetFullJournal(){
         tpsKeys().forEach(k=>toPush.push(k));
       }
     } else {
+      // Deletion records merge first, so the record lists below are filtered
+      // against the full set of deletions from both devices.
+      const rt = remote[TOMB_KEY];
+      if(rt){
+        const localTomb = localStorage.getItem(TOMB_KEY);
+        const tomb = mergeTombstones(localTomb, rt.value);
+        if(tomb !== localTomb){
+          window.__tpsInitWrite = true;
+          localStorage.setItem(TOMB_KEY, tomb);
+          window.__tpsInitWrite = false;
+        }
+        if(tomb !== rt.value) toPush.push(TOMB_KEY);
+      } else if(localStorage.getItem(TOMB_KEY)){
+        toPush.push(TOMB_KEY);
+      }
+
       // Merge per key
       const seen = new Set();
       Object.values(remote).forEach(r=>{
         seen.add(r.key);
+        if(r.key === TOMB_KEY) return;   // handled above
+
+        // Record lists combine by id rather than one copy replacing the other,
+        // so a trade logged on each device survives on both.
+        if(MERGEABLE.test(r.key)){
+          const localVal = localStorage.getItem(r.key);
+          if(localVal !== null && localVal !== r.value){
+            const merged = applyTombstones(unionById(localVal, r.value), r.key);
+            if(merged){
+              if(merged !== localVal){
+                const q1 = queue().filter(k=>k!==r.key);
+                localStorage.setItem(r.key, merged);
+                const m2 = meta(); m2[r.key]=new Date().toISOString(); setMeta(m2);
+                setQueue(q1);
+                changedLocal = true;
+              }
+              if(merged !== r.value) toPush.push(r.key);
+              return;
+            }
+          } else if(localVal === null){
+            const cleaned = applyTombstones(r.value, r.key);
+            window.__tpsInitWrite = true;
+            localStorage.setItem(r.key, cleaned);
+            window.__tpsInitWrite = false;
+            const m2 = meta(); m2[r.key]=r.updated_at; setMeta(m2);
+            changedLocal = true;
+            if(cleaned !== r.value) toPush.push(r.key);
+            return;
+          }
+          // identical on both sides, or an unexpected shape: fall through
+        }
+
         const localTime = m[r.key];
         if(!localTime || new Date(r.updated_at) >= new Date(localTime)){
           if(localStorage.getItem(r.key)!==r.value){
